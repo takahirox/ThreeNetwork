@@ -8,6 +8,11 @@ Writing...
 
 ## Demo
 
+- [PeerJS](http://takahirox.github.io/ThreeNetworkDemo/peerjs.html)
+- [PeerJS with Skinning edit](http://takahirox.github.io/ThreeNetworkDemo/peerjs_mmd.html)
+- EasyRTC
+- [Firebase](http://takahirox.github.io/ThreeNetworkDemo/firebase.html)
+
 ## Screen shot
 
 # Instruction
