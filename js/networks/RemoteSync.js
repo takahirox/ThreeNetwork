@@ -128,9 +128,22 @@
 
 			this.localObjectInfos[ object.uuid ] = info;
 
+			var morphTargetInfluences = [];
+
+			if ( object.morphTargetInfluences !== undefined ) {
+
+				for ( var i = 0, il = object.morphTargetInfluences.length; i < il; i ++ ) {
+
+					morphTargetInfluences[ i ] = object.morphTargetInfluences[ i ];
+
+				}
+
+			}
+
 			this.transferComponentsSync[ object.uuid ] = {
 				id: object.uuid,
-				matrix: [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 ]
+				matrix: [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 ],
+				morphTargetInfluences: morphTargetInfluences
 			};
 
 			if ( this.client.connectionNum() > 0 ) this.broadcastObjectAddition( object );
@@ -183,10 +196,23 @@
 			this.sharedObjectTable[ id ] = object;
 			this.sharedObjects.push( object );
 
+			var morphTargetInfluences = [];
+
+			if ( object.morphTargetInfluences !== undefined ) {
+
+				for ( var i = 0, il = object.morphTargetInfluences.length; i < il; i ++ ) {
+
+					morphTargetInfluences[ i ] = object.morphTargetInfluences[ i ];
+
+				}
+
+			}
+
 			this.transferComponentsSync[ object.uuid ] = {
 				id: object.uuid,
 				sid: id,
-				matrix: [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 ]
+				matrix: [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 ],
+				morphTargetInfluences: morphTargetInfluences
 			};
 
 		},
@@ -448,6 +474,19 @@
 
 			}
 
+			if ( object.morphTargetInfluences !== undefined ) {
+
+				var array = component.morphTargetInfluences;
+				var array2 = object.morphTargetInfluences;
+
+				for ( var i = 0, il = array.length; i < il; i ++ ) {
+
+					if ( ensureFloat32( array[ i ] ) !== ensureFloat32( array2[ i ] ) ) return true;
+
+				}
+
+			}
+
 			return false;
 
 		},
@@ -465,6 +504,19 @@
 
 			}
 
+			if ( object.morphTargetInfluences !== undefined ) {
+
+				var array = component.morphTargetInfluences;
+				var array2 = object.morphTargetInfluences;
+
+				for ( var i = 0, il = array.length; i < il; i ++ ) {
+
+					array[ i ] = ensureFloat32( array2[ i ] );
+
+				}
+
+			}
+
 			return component;
 
 		},
@@ -473,6 +525,19 @@
 
 			object.matrix.fromArray( component.matrix );
 			object.matrix.decompose( object.position, object.quaternion, object.scale );
+
+			if ( object.morphTargetInfluences !== undefined && component.morphTargetInfluences.length > 0 ) {
+
+				var array = component.morphTargetInfluences;
+				var array2 = object.morphTargetInfluences;
+
+				for ( var i = 0, il = array.length; i < il; i ++ ) {
+
+					array2[ i ] = array[ i ];
+
+				}
+
+			}
 
 		},
 
