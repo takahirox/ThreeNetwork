@@ -53,6 +53,7 @@
 		this.onReceives = [];
 		this.onAdds = [];
 		this.onRemoves = [];
+		this.onRemoteStreams = [];
 
 		this.client.addEventListener( 'open', function( id ) { self.onOpen( id ); } );
 		this.client.addEventListener( 'close', function( id ) { self.onClose( id ); } );
@@ -60,6 +61,7 @@
 		this.client.addEventListener( 'connect', function( id, fromRemote ) { self.onConnect( id, fromRemote ); } );
 		this.client.addEventListener( 'disconnect', function( id ) { self.onDisconnect( id ); } );
 		this.client.addEventListener( 'receive', function( data ) { self.onReceive( data ); } );
+		this.client.addEventListener( 'remotestream', function( stream ) { self.onRemoteStream( stream ); } );
 
 	};
 
@@ -101,6 +103,10 @@
 
 				case 'remove':
 					this.onRemoves.push( func );
+					break;
+
+				case 'remotestream':
+					this.onRemoteStreams.push( func );
 					break;
 
 				default:
@@ -523,6 +529,8 @@
 
 		deserialize: function ( object, component ) {
 
+			var transferComponent = this.transferComponentsSync[ object.uuid ];
+
 			object.matrix.fromArray( component.matrix );
 			object.matrix.decompose( object.position, object.quaternion, object.scale );
 
@@ -655,6 +663,16 @@
 
 			}
 
+		},
+
+		onRemoteStream: function ( stream ) {
+
+			for ( var i = 0, il = this.onRemoteStreams.length; i < il; i ++ ) {
+
+				this.onRemoteStreams[ i ]( stream );
+
+			}
+
 		}
 
 	} );
@@ -668,6 +686,8 @@
 		if ( params === undefined ) params = {};
 
 		this.id = params.id !== undefined ? params.id : '';
+		this.stream = params.stream !== undefined ? params.stream : null;
+
 		this.roomId = '';
 
 		this.connections = [];
@@ -679,6 +699,7 @@
 		this.onConnects = [];
 		this.onDisconnects = [];
 		this.onReceives = [];
+		this.onRemoteStreams = [];
 
 		if ( params.onOpen !== undefined ) this.addEventListener( 'open', params.onOpen );
 		if ( params.onClose !== undefined ) this.addEventListener( 'close', params.onClose );
@@ -686,6 +707,7 @@
 		if ( params.onConnect !== undefined ) this.addEventListener( 'connect', params.onConnect );
 		if ( params.onDisconnect !== undefined ) this.addEventListener( 'disconnect', params.onDisconnect );
 		if ( params.onReceive !== undefined ) this.addEventListener( 'receive', params.onReceive );
+		if ( params.onRemoteStream !== undefined ) this.addEventListener( 'remotestream', params.onRemoteStream );
 
 	};
 
@@ -719,6 +741,10 @@
 
 				case 'receive':
 					this.onReceives.push( func );
+					break;
+
+				case 'remotestream':
+					this.onRemoteStreams.push( func );
 					break;
 
 				default:
@@ -804,6 +830,16 @@
 			for ( var i = 0, il = this.onReceives.length; i < il; i ++ ) {
 
 				this.onReceives[ i ]( data );
+
+			}
+
+		},
+
+		onRemoteStream: function ( stream ) {
+
+			for ( var i = 0, il = this.onRemoteStreams.length; i < il; i ++ ) {
+
+				this.onRemoteStreams[ i ]( stream );
 
 			}
 

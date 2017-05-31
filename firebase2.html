@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webrtc</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body {
+				font-family: Monospace;
+				background-color: #fff;
+				color: #000;
+				margin: 0px;
+				overflow: hidden;
+			}
+			#info {
+				color: #000;
+				position: absolute;
+				top: 10px;
+				width: 100%;
+				text-align: center;
+				display:block;
+			}
+			#info a, .button { color: #f00; font-weight: bold; text-decoration: underline; cursor: pointer }
+		</style>
+	</head>
+
+	<body>
+		<script>
+		if ( location.href.indexOf( '?' ) === -1 ) {
+
+			location.href += '?' + ( ( Math.random() * 1000 ) | 0 );
+
+		}
+		</script>
+
+		<script src="https://www.gstatic.com/firebasejs/4.0.0/firebase.js"></script>
+
+		<script src="https://rawgit.com/mrdoob/three.js/r85/build/three.js"></script>
+
+		<script src="js/networks/RemoteSync.js"></script>
+		<script src="js/networks/FirebaseClient2.js"></script>
+		<script src="js/controls/FPControls.js"></script>
+
+		<script src="https://rawgit.com/mrdoob/three.js/r85/examples/js/effects/OutlineEffect.js"></script>
+		<script src="https://rawgit.com/mrdoob/three.js/r85/examples/js/controls/TransformControls.js"></script>
+		<script src="https://rawgit.com/mrdoob/three.js/r85/examples/js/Detector.js"></script>
+		<script src="https://rawgit.com/mrdoob/three.js/r85/examples/js/libs/stats.min.js"></script>
+
+		<script>
+
+			var container, stats;
+
+			var clientId;
+
+			var camera, scene, renderer, effect, controls, transformControls;
+			var remoteSync;
+
+			var clock = new THREE.Clock();
+
+
+			navigator.getUserMedia = navigator.getUserMedia ||
+							navigator.webkitGetUserMedia ||
+							navigator.mozGetUserMedia ||
+							navigator.msGetUserMedia;
+
+			if ( navigator.getUserMedia === undefined ) {
+
+				init();
+				animate();
+
+			} else {
+
+				navigator.getUserMedia( { audio: true },
+
+					function ( stream ) {
+
+						onStream( stream );
+
+						init( stream );
+						animate();
+
+					},
+
+					function ( error ) {
+
+						console.log( error );
+
+						init();
+						animate();
+
+					}
+
+				);
+
+			}
+
+			function init( stream ) {
+
+				remoteSync = new THREE.RemoteSync(
+					new THREE.FirebaseClient( {
+						authType: 'anonymous',
+						apiKey: 'your-api',
+						authDomain: 'your-project.firebaseapp.com',
+						databaseURL: 'https://your-project.firebaseio.com'
+						stream: stream
+					} )
+				);
+				remoteSync.addEventListener( 'open', onOpen );
+				remoteSync.addEventListener( 'close', onClose );
+				remoteSync.addEventListener( 'error', onError );
+				remoteSync.addEventListener( 'connect', onConnect );
+				remoteSync.addEventListener( 'disconnect', onDisconnect );
+				remoteSync.addEventListener( 'receive', onReceive );
+				remoteSync.addEventListener( 'add', onAdd );
+				remoteSync.addEventListener( 'remove', onRemove );
+				remoteSync.addEventListener( 'remotestream', onRemoteStream );
+
+				container = document.createElement( 'div' );
+				document.body.appendChild( container );
+
+				// scene
+
+				scene = new THREE.Scene();
+
+				camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 1, 2000 );
+				camera.position.z = 30;
+
+				var gridHelper = new THREE.PolarGridHelper( 60, 20 );
+				gridHelper.position.y = -10;
+				scene.add( gridHelper );
+
+				var ambient = new THREE.AmbientLight( 0x666666 );
+				scene.add( ambient );
+
+				var directionalLight = new THREE.DirectionalLight( 0x887766 );
+				directionalLight.position.set( -1, 1, 1 ).normalize();
+				scene.add( directionalLight );
+
+				// renderer
+
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setClearColor( new THREE.Color( 0xffffff ) );
+				container.appendChild( renderer.domElement );
+
+				effect = new THREE.OutlineEffect( renderer );
+
+				// STATS
+
+				stats = new Stats();
+				container.appendChild( stats.dom );
+
+				// controls
+
+				controls = new THREE.FPControls( camera, renderer.domElement );
+
+				transformControls = new THREE.TransformControls( camera, renderer.domElement );
+				transformControls.addEventListener( 'change', render );
+				transformControls.setMode( 'translate' );
+
+				window.addEventListener( 'resize', onWindowResize, false );
+
+			}
+
+			function createModel( id ) {
+
+				var face = new THREE.Mesh(
+					new THREE.SphereBufferGeometry( 2.0 ),
+					new THREE.MeshToonMaterial()
+				);
+
+				var eye1 = new THREE.Mesh(
+					new THREE.SphereBufferGeometry( 0.2 ),
+					new THREE.MeshToonMaterial( { color: 0x000000 } )
+				);
+
+				eye1.position.x = 0.7;
+				eye1.position.y = 0.8;
+				eye1.position.z = -1.7;
+
+				var eye2 = new THREE.Mesh(
+					new THREE.SphereBufferGeometry( 0.2 ),
+					new THREE.MeshToonMaterial( { color: 0x000000 } )
+				);
+
+				eye2.position.x = -0.7;
+				eye2.position.y = 0.8;
+				eye2.position.z = -1.7;
+
+				var nose = new THREE.Mesh(
+					new THREE.SphereBufferGeometry( 0.5 ),
+					new THREE.MeshToonMaterial()
+				);
+
+				nose.position.z = -2.0;
+
+				var mouse = new THREE.Mesh(
+					new THREE.BoxBufferGeometry( 1.5, 0.3, 0.5 ),
+					new THREE.MeshToonMaterial( { color: 0xff0000 } )
+				);
+
+				mouse.position.y = -1.0;
+				mouse.position.z = -1.5;
+
+				var plate = createNamePlate( id );
+				plate.position.y = 3.0;
+
+				var plate2 = plate.clone();
+				plate2.rotation.y = Math.PI;
+
+				face.add( eye1 );
+				face.add( eye2 );
+				face.add( nose );
+				face.add( mouse );
+				face.add( plate );
+				face.add( plate2 );
+
+				return face;
+
+			}
+
+			function createNamePlate( id ) {
+
+				var canvas = document.createElement( 'canvas' );
+				canvas.width = 128;
+				canvas.height = 32;
+				var ctx = canvas.getContext( '2d' );
+				ctx.font = '10pt Arial';
+				ctx.fillStyle = 'red';
+				ctx.fillRect( 0, 0, canvas.width, canvas.height );
+				ctx.fillStyle = 'white';
+				ctx.fillRect( 2, 2, canvas.width - 4, canvas.height - 4 );
+				ctx.fillStyle = 'black';
+				ctx.textAlign = 'center';
+				ctx.textBaseline = 'middle';
+				ctx.fillText( id, canvas.width / 2, canvas.height / 2 );
+
+				var texture = new THREE.Texture( canvas );
+				texture.needsUpdate = true;
+
+				return new THREE.Mesh(
+					new THREE.PlaneBufferGeometry( 4.0, 1.0 ),
+					new THREE.MeshBasicMaterial( {
+						map: texture,
+						opacity: 0.8,
+						transparent: true
+					} )
+				);
+
+			}
+
+			function createBox() {
+
+				return new THREE.Mesh(
+					new THREE.BoxBufferGeometry( 2.0, 2.0, 2.0 ),
+					new THREE.MeshBasicMaterial( {
+						color: 0xFFFF00,
+						opacity: 0.8,
+						transparent: true
+					} )
+				);
+
+			}
+
+			function createSphere() {
+
+				return new THREE.Mesh(
+					new THREE.SphereBufferGeometry( 2.0 ),
+					new THREE.MeshBasicMaterial( {
+						color: 0xFFFF00,
+						opacity: 0.8,
+						transparent: true
+					} )
+				);
+
+			}
+
+			function onWindowResize() {
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				effect.setSize( window.innerWidth, window.innerHeight );
+
+			}
+
+			//
+
+			function animate() {
+
+				requestAnimationFrame( animate );
+
+				stats.begin();
+				update();
+				render();
+				stats.end();
+
+			}
+
+			function update() {
+
+				controls.update();
+				transformControls.update();
+
+				remoteSync.sync();
+
+			}
+
+			function render() {
+
+				effect.render( scene, camera );
+
+			}
+
+			function onOpen( id ) {
+
+				clientId = id;
+
+				document.getElementById( 'your_id' ).innerText = 'Your ID: ' + id;
+				document.getElementById( 'link' ).appendChild( createLink() );
+
+				remoteSync.addLocalObject( camera, { type: 'camera' } );
+
+/*
+				var box = createBox();
+				box.position.y = -10;
+				scene.add( box );
+
+				transformControls.attach( box );
+
+				remoteSync.addLocalObject( box, { type: 'box' } );
+*/
+
+				var sphere = createSphere();
+				sphere.position.y = -10;
+				scene.add( sphere );
+
+				transformControls.attach( sphere );
+
+				remoteSync.addSharedObject( sphere, 0 );
+
+				scene.add( transformControls );
+
+				connectFromURL();
+
+			}
+
+			function onReceive( data ) {
+
+			}
+
+			function onAdd( destId, component ) {
+
+				var objectId = component.id;
+				var info = component.info;
+
+				var mesh;
+
+				switch ( info.type ) {
+
+					case 'camera':
+						mesh = createModel( destId );
+						break;
+
+					case 'box':
+						mesh = createBox();
+						break;
+
+					default:
+						return;
+
+				}
+
+				scene.add( mesh );
+
+				remoteSync.addRemoteObject( destId, objectId, mesh );
+
+			}
+
+			function onRemove( destId, objectId, object ) {
+
+				if ( object.parent !== null ) object.parent.remove( object );
+
+			}
+
+			function onStream( stream ) {
+
+				console.log( 'localStream' );
+				console.log( stream );
+
+			}
+
+			function onRemoteStream( stream ) {
+
+				console.log( 'remoteStream' );
+				console.log( stream );
+
+			}
+
+			function createLink() {
+
+				var a = document.createElement( 'a' );
+
+				a.href = location.href;
+				a.text = 'Share this link';
+				a.target = '_blank';
+
+				return a;
+
+			}
+
+			function onClose( destId ) {
+
+				showMessage( 'Disconnected with ' + destId );
+
+			}
+
+			function onError( error ) {
+
+				showMessage( error );
+
+			}
+
+			function onConnect( destId ) {
+
+				showMessage( 'Connected with ' + destId );
+
+			}
+
+			function onDisconnect( destId, object ) {
+
+				showMessage( 'Disconnected with ' + destId );
+
+			}
+
+			function connect( id ) {
+
+				if ( id === clientId ) {
+
+					showMessage( id + ' is your id' );
+
+					return;
+
+				}
+
+				var message = document.getElementById( 'message' );
+
+				showMessage( 'Connecting with ' + id );
+
+				remoteSync.connect( id );
+
+			}
+
+			function connectFromURL() {
+
+				var url = location.href;
+				var index = url.indexOf( '?' );
+
+				if ( index >= 0 ) {
+
+					var id = url.slice( index + 1 );
+
+					connect( id );
+
+				}
+
+			}
+
+			function connectFromForm() {
+
+				var input = document.getElementById( 'dest_id' );
+				var id = input.value.trim();
+
+				if ( id === '' ) return;
+
+				connect( id );
+
+				input.value = '';
+
+			}
+
+			function showMessage( str ) {
+
+				var message = document.getElementById( 'message' );
+				message.innerText = str;
+
+			}
+
+		</script>
+
+		<div id="info">
+			<div id="your_id"></div>
+			<div id="link"></div>
+			<!--
+			<div>
+				<input id="dest_id" type="text">
+				<input type="button" value="connect" onclick="connectFromForm()">
+			</div>
+			<div id="message">Enter remote user's id</div>
+			-->
+			<div id="message"></div>
+		</div>
+
+	</body>
+</html>

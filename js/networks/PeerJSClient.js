@@ -62,6 +62,18 @@
 
 			} );
 
+			peer.on( 'call', function ( call ) {
+
+				call.answer( self.stream );
+
+				call.on( 'stream', function ( remoteStream ) {
+
+					self.onRemoteStream( remoteStream );
+
+				} );
+
+			} );
+
 			peer.on( 'error', function ( error ) {
 
 				self.onError( error );
@@ -140,6 +152,8 @@
 
 				if ( ! self.allowDiscovery ) self.sendSnoopList( id );
 
+				if ( self.stream !== null && ! fromRemote ) self.call( id );
+
 			} );
 
 		},
@@ -197,6 +211,18 @@
 				this.send( this.connections[ i ].peer, data );
 
 			}
+
+		},
+
+		call: function ( id ) {
+
+			var call = this.peer.call( id, this.stream );
+
+			call.on( 'stream', function ( remoteStream ) {
+
+				self.onRemoteStream( remoteStream );
+
+			} );
 
 		}
 
