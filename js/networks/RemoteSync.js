@@ -3,12 +3,18 @@
 	var TRANSFER_TYPE_SYNC = 0;
 	var TRANSFER_TYPE_ADD = 1;
 	var TRANSFER_TYPE_REMOVE = 2;
+	var TRANSFER_TYPE_USER_DATA = 3;
 
 	var TRANSFER_COMPONENT = {
 		id: null,
 		did: null,
 		type: -1,
 		list: []
+	};
+
+	var TRANSFER_COMPONENT_USER_DATA = {
+		type: TRANSFER_TYPE_USER_DATA,
+		data: null
 	};
 
 	var float32Value = new Float32Array( 1 );
@@ -54,6 +60,7 @@
 		this.onAdds = [];
 		this.onRemoves = [];
 		this.onRemoteStreams = [];
+		this.onReceiveUserDatas = [];
 
 		this.client.addEventListener( 'open', function( id ) { self.onOpen( id ); } );
 		this.client.addEventListener( 'close', function( id ) { self.onClose( id ); } );
@@ -107,6 +114,10 @@
 
 				case 'remotestream':
 					this.onRemoteStreams.push( func );
+					break;
+
+				case 'receive_user_data':
+					this.onReceiveUserDatas.push( func );
 					break;
 
 				default:
@@ -290,6 +301,22 @@
 			}
 
 			if ( list.length > 0 ) this.client.broadcast( component );
+
+		},
+
+		sendUserData: function ( destId, data ) {
+
+			var component = TRANSFER_COMPONENT_USER_DATA;
+			component.data = data;
+			this.client.send( destId, component );
+
+		},
+
+		broadcastUserData: function ( data ) {
+
+			var component = TRANSFER_COMPONENT_USER_DATA;
+			component.data = data;
+			this.client.broadcast( component );
 
 		},
 
@@ -608,6 +635,11 @@
 					this.onRemove( component );
 					break;
 
+				case TRANSFER_TYPE_USER_DATA:
+
+					this.onReceiveUserData( component );
+					break;
+
 				default:
 
 					console.log( 'THREE.RemoteSync.unReceive: Unknown type ' + component.type );
@@ -670,6 +702,16 @@
 			for ( var i = 0, il = this.onRemoteStreams.length; i < il; i ++ ) {
 
 				this.onRemoteStreams[ i ]( stream );
+
+			}
+
+		},
+
+		onReceiveUserData: function ( component ) {
+
+			for ( var i = 0, il = this.onReceiveUserDatas.length; i < il; i ++ ) {
+
+				this.onReceiveUserDatas[ i ]( component.data );
 
 			}
 
