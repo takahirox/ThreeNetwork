@@ -777,6 +777,8 @@
 
 		onOpen: function ( id ) {
 
+			this.id = id;
+
 			for ( var i = 0, il = this.onOpens.length; i < il; i ++ ) {
 
 				this.onOpens[ i ]( id );

@@ -1,101 +1,93 @@
 ( function () {
 
-	THREE.FirebaseClient = function ( params ) {
-
-		if ( window.firebase === undefined ) {
-
-			throw new Error( 'THREE.FirebaseClient: Import firebase from https://www.gstatic.com/firebasejs/x.x.x/firebase.js' );
-
-		}
+	THREE.WebRTCClient = function ( server, params ) {
 
 		THREE.NetworkClient.call( this, params );
 
-		this.apiKey = params.apiKey !== undefined ? params.apiKey : '';
-		this.authDomain = params.authDomain !== undefined ? params.authDomain : '';
-		this.databaseURL = params.databaseURL !== undefined ? params.databaseURL : '';
-		this.authType = params.authType !== undefined ? params.authType : 'anonymous';
+		this.server = server;
 
 		this.init();
 
 	};
 
-	THREE.FirebaseClient.prototype = Object.create( THREE.NetworkClient.prototype );
-	THREE.FirebaseClient.prototype.constructor = THREE.FirebaseClient;
+	THREE.WebRTCClient.prototype = Object.create( THREE.NetworkClient.prototype );
+	THREE.WebRTCClient.prototype.constructor = THREE.WebRTCClient;
 
-	Object.assign( THREE.FirebaseClient.prototype, {
+	Object.assign( THREE.WebRTCClient.prototype, {
 
 		init: function () {
 
-			firebase.initializeApp( {
-				apiKey: this.apiKey,
-				authDomain: this.authDomain,
-				databaseURL: this.databaseURL
-			} );
-
-			this.auth();
-
-		},
-
-		auth: function () {
-
-			switch ( this.authType ) {
-
-				case 'none':
-					this.authNone();
-					break;
-
-				case 'anonymous':
-					this.authAnonymous();
-					break;
-
-				default:
-					console.log( 'THREE.FilebaseClient.auth: Unkown authType ' + this.authType );
-					break;
-
-			}
-
-		},
-
-		authNone: function () {
-
 			var self = this;
 
-			requestAnimationFrame( function () {
+			this.server.addEventListener( 'open', function ( id ) { self.onOpen( id ); } );
+			this.server.addEventListener( 'close', function ( id ) { self.onClose( id ); } );
+			this.server.addEventListener( 'error', function ( error ) { self.onError( error ); } );
 
-				var id = THREE.Math.generateUUID().replace( /-/g, '' ).toLowerCase().slice( 0, 16 );
-				self.id = id;
-				self.onOpen( id );
+			this.server.addEventListener( 'receive', function ( signal ) {
 
-			} );
+				for ( var i = 0, il = self.connections.length; i < il; i ++ ) {
 
-		},
-
-		authAnonymous: function () {
-
-			var self = this;
-
-			firebase.auth().signInAnonymously().catch( function ( error ) {
-
-				console.log( 'THREE.FirebaseClient.authAnonymous: ' + error );
-
-				self.onError( error );
-
-			} );
-
-			firebase.auth().onAuthStateChanged( function ( user ) {
-
-				if ( user === null ) {
-
-					self.onClose( self.id );
-
-				} else {
-
-					self.id = user.uid;
-					self.onOpen( user.uid );
+					self.connections[ i ].onReceiveSignal( signal );
 
 				}
 
 			} );
+
+			this.server.addEventListener( 'remotejoin', function ( params ) {
+
+				var id = params.peer;
+
+				if ( id === self.id || self.hasConnection( id ) ) return;
+
+				var timestamp = params.joinTimestamp;
+				var timestamp2 = params.peerJoinTimestamp;
+
+				// TODO: need a workaround for timestamp === timestamp2
+				var connectFromMe = timestamp > timestamp2;
+
+				var peer = new WebRTCPeer( self.id, id, self.server, self.stream );
+
+				peer.addEventListener( 'open', function ( id ) {
+
+					self.onConnect( id, ! connectFromMe );
+
+				} );
+
+				peer.addEventListener( 'close', function ( id ) {
+
+					if ( self.removeConnection( id ) ) self.onDisconnect( id );
+
+				} );
+
+				peer.addEventListener( 'error', function ( error ) {
+
+					self.onError( error );
+
+				} );
+
+				peer.addEventListener( 'receive', function ( message ) {
+
+					self.onReceive( message );
+
+				} );
+
+				peer.addEventListener( 'receivestream', function ( stream ) {
+
+					self.onRemoteStream( stream );
+
+				} );
+
+				self.addConnection( id, peer );
+
+				if ( connectFromMe ) peer.offer();
+
+			} );
+
+			if ( this.server.id !== '' ) {
+
+				requestAnimationFrame( function () { self.onOpen( self.server.id ); } );
+
+			}
 
 		},
 
@@ -105,75 +97,7 @@
 
 			this.roomId = roomId;
 
-			// TODO: check if this timescamp logic can race.
-			this.getTimeStamp( function( timestamp ) {
-
-				var ref = firebase.database().ref( roomId + '/' + self.id );
-
-				ref.set( { timestamp: timestamp, signal: '' } );
-
-				ref.onDisconnect().remove();
-
-				firebase.database().ref( roomId ).on( 'child_added', function ( data ) {
-
-					var id = data.key;
-
-					if ( id === self.id || self.hasConnection( id ) ) return;
-
-					var timestamp2 = data.val().timestamp;
-
-					// TODO: need a workaround for timestamp === timestamp2
-					var connectFromMe = timestamp > timestamp2;
-
-					var peer = new WebRTCPeer( self.id, id, self, self.stream );
-
-					peer.addEventListener( 'open', function ( id ) {
-
-						self.onConnect( id, ! connectFromMe );
-
-					} );
-
-					peer.addEventListener( 'close', function ( id ) {
-
-						if ( self.removeConnection( id ) ) self.onDisconnect( id );
-
-					} );
-
-					firebase.database().ref( self.roomId + '/' + id + '/signal' ).on( 'value', function ( data ) {
-
-						if ( data.val() === null || data.val() === '' ) return;
-
-						peer.onReceiveSignal( data.val() );
-
-					} );
-
-					self.addConnection( id, peer );
-
-					if ( connectFromMe ) peer.offer();
-
-				} );
-
-			} );
-
-		},
-
-		getTimeStamp: function ( callback ) {
-
-			var ref = firebase.database().ref( 'tmp' + '/' + this.id );
-
-			ref.set( firebase.database.ServerValue.TIMESTAMP );
-
-			ref.once( 'value', function ( data ) {
-
-				var timestamp = data.val();
-
-				ref.remove();
-
-				callback( timestamp );
-
-			} );
-
-			ref.onDisconnect().remove();
+			this.server.connect( roomId );
 
 		},
 
@@ -194,12 +118,6 @@
 				this.send( this.connections[ i ].peer, data );
 
 			}
-
-		},
-
-		sendSignal: function ( data ) {
-
-			firebase.database().ref( this.roomId + '/' + this.id + '/signal' ).set( data );
 
 		}
 
@@ -222,6 +140,9 @@
 
 		this.onOpens = [];
 		this.onCloses = [];
+		this.onReceives = [];
+		this.onReceiveStreams = [];
+		this.onErrors = [];
 
 	};
 
@@ -237,6 +158,18 @@
 
 				case 'close':
 					this.onCloses.push( func );
+					break;
+
+				case 'receive':
+					this.onReceives.push( func );
+					break;
+
+				case 'receivestream':
+					this.onReceiveStreams.push( func );
+					break;
+
+				case 'error':
+					this.onErrors.push( func );
 					break;
 
 				default:
@@ -267,6 +200,36 @@
 
 		},
 
+		onReceive: function ( message ) {
+
+			for ( var i = 0, il = this.onReceives.length; i < il; i ++ ) {
+
+				this.onReceives[ i ]( message );
+
+			}
+
+		},
+
+		onReceiveStream: function ( stream ) {
+
+			for ( var i = 0, il = this.onReceiveStreams.length; i < il; i ++ ) {
+
+				this.onReceiveStreams[ i ]( stream );
+
+			}
+
+		},
+
+		onError: function ( error ) {
+
+			for ( var i = 0, il = this.onErrors.length; i < il; i ++ ) {
+
+				this.onErrors[ i ]( error );
+
+			}
+
+		},
+
 		createPeerConnection: function ( stream ) {
 
 			var self = this;
@@ -291,13 +254,14 @@
 				if ( event.candidate ) {
 
 					var params = {
+						id: self.id,
 						peer: self.peer,
 						type: 'candidate',
 						sdpMLineIndex: event.candidate.sdpMLineIndex,
 						candidate: event.candidate.candidate
 					};
 
-					self.server.sendSignal( params );
+					self.server.send( params );
 
 				}
 
@@ -305,7 +269,7 @@
 
 			pc.onaddstream = function ( event ) {
 
-				self.server.onRemoteStream( event.stream );
+				self.onReceiveStream( event.stream );
 
 			};
 
@@ -315,7 +279,7 @@
 
 		onReceiveSignal: function ( signal ) {
 
-			if ( this.id !== signal.peer ) return;
+			if ( this.id !== signal.peer || this.peer !== signal.id ) return;
 
 			switch ( signal.type ) {
 
@@ -332,6 +296,7 @@
 					break;
 
 				default:
+					console.log( 'WebRTCPeer: Unknown signal type ' + signal.type );
 					break;
 
 			}
@@ -362,7 +327,7 @@
 				function ( error ) {
 
 					console.log( error );
-					self.server.onError( error );
+					self.onError( error );
 
 				}
 
@@ -393,7 +358,7 @@
 				function ( error ) {
 
 					console.log( error );
-					self.server.onError( error );
+					self.onError( error );
 
 				}
 
@@ -412,13 +377,14 @@
 				function ( error ) {
 
 					console.log( error );
-					self.server.onError( error );
+					self.onError( error );
 
 				}
 
 			);
 
-			this.server.sendSignal( {
+			this.server.send( {
+				id: this.id,
 				peer: this.peer,
 				type: sdp.type,
 				sdp: sdp.sdp
@@ -444,7 +410,7 @@
 				function ( error ) {
 
 					console.log( error );
-					self.server.onError( error );
+					self.onError( error );
 
 				}
 
@@ -471,7 +437,7 @@
 				function ( error ) {
 
 					console.log( error );
-					self.server.onError( error );
+					self.onError( error );
 
 				}
 
@@ -491,7 +457,7 @@
 
 			this.channel.onmessage = function ( event ) {
 
-				self.server.onReceive( JSON.parse( event.data ) );
+				self.onReceive( JSON.parse( event.data ) );
 
 			};
 
@@ -509,7 +475,7 @@
 
 			this.channel.onerror = function( error ) {
 
-				self.server.onError( error );
+				self.onError( error );
 
 			};
 
