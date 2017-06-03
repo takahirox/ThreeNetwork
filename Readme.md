@@ -83,6 +83,16 @@ T.B.D.
   }
 ```
 
+## Setup with servers
+
+T.B.D.
+
+### PeerJS
+
+### Firebase
+
+### EasyRTC
+
 ## Concept
 
 T.B.D.
