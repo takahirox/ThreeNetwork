@@ -260,7 +260,7 @@ and NetworkClient & Signaling server depending on your platform.
 - `sync( force, onlyLocal )`: Broadcasts registered Local and Shared objects' status to remote peers.
 - `connect( id )`: Connects a room or a remote peer (depending on platform)
 - `sendUserData( remotePeerId, data )`, `broadcastUserData( data )`: Sends/Broadcasts user-data to remote peer(s). These methods invoking will be notified to Remote peers' `receive_user_data`.
--- `addEventListener`: Adds event listener.
+- `addEventListener`: Adds event listener.
   - `open` ( peerId ): When connected with server.
   - `close` ( peerId ): When disconnected from server.
   - `error` ( errorMessage ): When error occurs.
