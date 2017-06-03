@@ -15,11 +15,10 @@ ThreeNetwork is real-time network library for Three.js. ThreeNetwork synchronize
 
 ## Features
 
-T.B.D.
-
 - easy to setup and use
-- multi-user
+- multi-user with room system
 - low latency with WebRTC
+- efficient data transfer
 
 ## Sample code
 
@@ -51,6 +50,11 @@ remoteSync.addEventListener( 'open', function ( id ) {
   var localMesh = new THREE.Mesh(...);
   remoteSync.addLocalObject( localMesh, { type: 'mesh' } );
   scene.add( localMesh );
+  var sharedMesh = new THREE.Mesh(...);
+  // local and remote peers must set the same unique shared id
+  // to a object shared between them
+  remoteSync.addSharedObject( sharedMesh, 'unique-shared-id' );
+  scene.add( sharedMesh );
 } );
 
 // when remote adds an object
@@ -85,15 +89,32 @@ function render() {
 }
 ```
 
+## Concept
+
+ThreeNetwork regards Three.js objects as three type objects.
+
+- Local object
+- Remote object
+- Shared object
+
+Local object is a object registered to `RemoteSync` with `.addLocalObject()`. Local object status will be sent to remote peers. Local object addition will be notified to remote peers' `add` event listener.
+
+Remote object is a object registered to `RemoteSync` with `.addRemoteObject()`. Remote object status will reflect the status of a corresponding remote peer's local object. ThreeNetwork requires local peer to add a Remote object when it's notified remote peer's Local object addition by a remote peer via `add` event listener. Notification comes with info of remote peer's Local object, local peer needs to create an appropriate object by seeing info and register is as a Remote object.
+
+Shared object is a object registered to `RemoteSync` with `.addSharedObject()`. Shared object status will be sent to remote peers and also reflect the status of a corresponding remote peer's shared object. Shared object will be bind with remote peers objects assigned the same shared-id.
+
+ThreeNetwork doesn't care objects which aren't registered to `RemoteSync`.
+
+
 ## Setup with servers
 
 ### PeerJS + PeerServer Cloud service
 
-The easiest way is to use [PeerServer Cloud service](http://peerjs.com/peerserver) of PeerJS.
+The easiest way is to use PeerServer Cloud service of PeerJS.
 
 1. Go to [PeerServer Cloud service](http://peerjs.com/peerserver)
 2. Get API key
-3. Pass the API key to PeerJSClient.
+3. Pass the API key to `PeerJSClient`.
 
 ```javascript
 <script src="https://rawgit.com/mrdoob/three.js/r85/build/three.js"></script>
@@ -112,7 +133,7 @@ Note that PeerServer Cloud service has limitation.
 - Up to 50 concurrent connections
 - No room system, a peer can't know other remote peers connected to the server
 
-Then you need to pass a remote peer's id you wanna connect to .connect(). (So, maybe the remote peer needs to share its id with you beforehand.)
+Then you need to pass a remote peer's id you wanna connect to `.connect()`. (So, maybe the remote peer needs to share its id with you beforehand.)
 
 ```javascript
 remoteSync.connect( 'remote-peer-id' );
@@ -123,7 +144,7 @@ If you wanna avoid these limitation, you need to run your own PeerServer.
 
 1. Go to [peerjs-server GitHub](https://github.com/peers/peerjs-server)
 2. Follow the instruction and run your own server
-3. Set "allowDiscovery: true" of PeerJSClient, and pass host, port, path to it.
+3. Set `allowDiscovery: true` of `PeerJSClient`, and pass `host`, `port`, `path` to it.
 
 ```javascript
 <script src="https://rawgit.com/mrdoob/three.js/r85/build/three.js"></script>
@@ -140,7 +161,7 @@ remoteSync = new THREE.RemoteSync(
 );
 ```
 
-PeerJSClient acts as there's one room in the server then you don't need to pass id to .connect().
+`PeerJSClient` acts as there's one room in the server then you don't need to pass id to `.connect()`.
 
 ```javascript
 remoteSync.connect( '' );
@@ -153,7 +174,7 @@ Using Firebase is another easiest way. You can sync object via Realtime Database
 1. Go to [Firebase console](https://console.firebase.google.com/)
 2. Open project
 3. Setup Authentication and Realtime Database security rule
-4. Pass Authentication type, your apikey, authDomain, databaseURL to FirebaseClient
+4. Pass Authentication type, your apikey, authDomain, databaseURL to `FirebaseClient`
 
 ```javascript
 <script src="https://rawgit.com/mrdoob/three.js/r85/build/three.js"></script>
@@ -170,7 +191,7 @@ remoteSync = new THREE.RemoteSync(
 );
 ```
 
-FirebaseClient supports room system, then pass roomId to .connect() to join.
+`FirebaseClient` supports room system, then pass roomId to `.connect()` to join.
 
 ```javascript
 remoteSync.connect( 'roomId' );
@@ -181,8 +202,8 @@ remoteSync.connect( 'roomId' );
 You can also use Firebase as signaling server and connect remote peers with WebRTC.
 
 1. Setup Firebase project (See above)
-2. Pass Authentication type, your apikey, authDomain, databaseURL to FirebaseSignalingServer
-3. Pass FirebaseSignalingServer instance to WebRTCClient 
+2. Pass Authentication type, your apikey, authDomain, databaseURL to `FirebaseSignalingServer`
+3. Pass FirebaseSignalingServer instance to `WebRTCClient`
 
 ```javascript
 <script src="https://rawgit.com/mrdoob/three.js/r85/build/three.js"></script>
@@ -202,7 +223,7 @@ remoteSync = new THREE.RemoteSync(
 );
 ```
 
-FirebaseSignalingServer+WebRTCClient supports room system, then pass roomId to .connect() to join.
+`FirebaseSignalingServer`+`WebRTCClient` supports room system, then pass roomId to `.connect()` to join.
 
 ```javascript
 remoteSync.connect( 'roomId' );
@@ -212,22 +233,14 @@ remoteSync.connect( 'roomId' );
 
 T.B.D.
 
-## Concept
-
-T.B.D.
-
-- local object
-- remote object
-- shared object
-
 ## Files
 
-T.B.D.
+In your code, import `js/networks/RemoteSync.js`
 
-RemoteSync
 - js/networks/RemoteSync.js
 
-NetworkClient & Signaling server
+and NetworkClient & Signaling server depending on your platform.
+
 - js/networks/FirebaseSignalingServer.js
 - js/networks/WebRTCClient.js
 - js/networks/PeerJSClient.js
@@ -239,19 +252,21 @@ NetworkClient & Signaling server
 
 T.B.D.
 
-RemoteSync
-- addLocalObject
-- addSharedObject
-- addRemoteObject 
-- sendUserData, broadcastUserData
-- addEventListener
-  - open
-  - close
-  - error
-  - connect
-  - disconnect
-  - add
-  - remove
-  - receive
-  - remote_stream
-  - receive_user_data
+`RemoteSync`
+- `addLocalObject`
+- `addSharedObject`
+- `addRemoteObject`
+- `sync`
+- `connect`
+- `sendUserData`, `broadcastUserData`
+- `addEventListener`
+  - `open`
+  - `close`
+  - `error`
+  - `connect`
+  - `disconnect`
+  - `add`
+  - `remove`
+  - `receive`
+  - `remote_stream`
+  - `receive_user_data`
