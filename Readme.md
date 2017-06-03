@@ -23,7 +23,17 @@ ThreeNetwork is real-time network library for Three.js. ThreeNetwork synchronize
 
 ## Sample code
 
-Import `js/networks/RemoteSync.js` and client(s) depending on your platform.
+In your coe, import `js/networks/RemoteSync.js`
+
+- js/networks/RemoteSync.js
+
+and NetworkClient (and Signaling server) depending on your platform.
+
+- js/networks/FirebaseSignalingServer.js
+- js/networks/WebRTCClient.js
+- js/networks/PeerJSClient.js
+- js/networks/EasyRTCClient.js
+- js/networks/FirebaseClient.js
 
 ```javascript
 <script src="https://rawgit.com/mrdoob/three.js/r85/build/three.js"></script>
@@ -61,6 +71,7 @@ remoteSync.addEventListener( 'open', function ( id ) {
 // when remote adds an object
 remoteSync.addEventListener( 'add', function ( remotePeerId, objectId, info ) {
   var remoteMesh;
+  // make an object fitting to info sent from a remote peer
   switch( info.type ) {
     case 'mesh':
       remoteMesh = new THREE.Mesh(...);
@@ -106,6 +117,39 @@ Shared object is a object registered to `RemoteSync` with `.addSharedObject()`. 
 
 ThreeNetwork doesn't care objects which aren't registered to `RemoteSync`.
 
+## Media streaming
+
+ThreeNetwork supports media streaming (audio, video), but it just transfers streaming. You need to setup in your user code if you wanna make the use it, for example if you wanna play remote peer's video streaming on local. Refer to some documents for the setup.
+- https://developer.mozilla.org/en/docs/Web/API/Navigator/getUserMedia
+- https://www.html5rocks.com/en/tutorials/getusermedia/intro/
+
+To transfer local streaming to remote, get local media stream with `navigator.*GetUserMedia()` and then pass it to `NetworkClient` as `.stream`.
+
+```javascript
+navigator.getUserMedia = navigator.getUserMedia ||
+                         navigator.webkitGetUserMedia ||
+                         navigator.mozGetUserMedia ||
+                         navigator.msGetUserMedia;
+
+navigator.getUserMedia( { audio: true },
+  function ( stream ) {
+    remoteSync = new THREE.RemoteSync(
+      new THREE.WebRTCClient(
+        new THREE.FirebaseSignalingServer( { ... } ),
+        { stream: stream }
+      )
+    );  
+  }
+);
+```
+
+To receive remote peer's stream, set `remote_stream` event listener.
+
+```javascript
+remoteSync.addEventListener( 'remote_stream', functioin ( remoteStream ) {
+  // setup audio context or something with remote stream here
+} );
+```
 
 ## Setup with servers
 
@@ -234,21 +278,6 @@ remoteSync.connect( 'roomId' );
 
 T.B.D.
 
-## Files
-
-In your code, import `js/networks/RemoteSync.js`
-
-- js/networks/RemoteSync.js
-
-and NetworkClient & Signaling server depending on your platform.
-
-- js/networks/FirebaseSignalingServer.js
-- js/networks/WebRTCClient.js
-- js/networks/PeerJSClient.js
-- js/networks/EasyRTCClient.js
-- js/networks/FirebaseClient.js
-
-
 ## API
 
 `RemoteSync`
@@ -257,7 +286,7 @@ and NetworkClient & Signaling server depending on your platform.
 - `addSharedObject( object, sharedId )`: Registers a Shared object. Shared object's status will be sent to remote by invokind `.sync()` and aldo reglect corresponding remote peers' Shared object. Shared object will bind with remote peers' shared object assigned the same shared id.
 - `removeLocalObject( object )`: Removes a Local object from `RemoteSync`.
 - `removeSharedObject( sharedId )`: Unbinds Shared object.
-- `sync( force, onlyLocal )`: Broadcasts registered Local and Shared objects' status to remote peers.
+- `sync( force, onlyLocal )`: Broadcasts registered Local and Shared objects' status to remote peers. The status only of the objects which are updated since last `.sync()` for the efficient data transfer. If `force` is true, the status of all objects will be sent even if they aren't updated. If `onlyLocal` is true, the status only of Local objects will be sent.
 - `connect( id )`: Connects a room or a remote peer (depending on platform)
 - `sendUserData( remotePeerId, data )`, `broadcastUserData( data )`: Sends/Broadcasts user-data to remote peer(s). These methods invoking will be notified to Remote peers' `receive_user_data`.
 - `addEventListener`: Adds event listener.
@@ -266,8 +295,8 @@ and NetworkClient & Signaling server depending on your platform.
   - `error` ( errorMessage ): When error occurs.
   - `connect` ( remotePeerId ): When connected with a remote peer.
   - `disconnect` ( remotePeerId ): When disconnected from a remote peer.
-  - `add` ( remotePeerId, objectUuid, info ): When a remote peer adds its local object.
-  - `remove` ( remotePeerId, objectUuid, remoteObject ): When a remote peer removes its local object.
+  - `add` ( remotePeerId, objectUuid, info ): When a remote peer adds its local object. `.addRemoteObject()` is assumed to be called in this listener callback function.
+  - `remove` ( remotePeerId, objectUuid, remoteObject ): When a remote peer removes its local object. An object automatically be removed from `RemoteSync`.
   - `receive` (data): When receives data from a remote peer.
   - `remote_stream` (stream): When receives media streaming from a remote peer.
   - `receive_user_data` (data): When received user-data from a remote peer.
