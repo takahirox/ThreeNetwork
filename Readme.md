@@ -23,11 +23,11 @@ ThreeNetwork is real-time network library for Three.js. ThreeNetwork synchronize
 
 ## Sample code
 
-In your coe, import `js/networks/RemoteSync.js`
+In your coe, import `RemoteSync`
 
 - js/networks/RemoteSync.js
 
-and NetworkClient (and Signaling server) depending on your platform.
+and `NetworkClient` (and `SignalingServer`) depending on your platform.
 
 - js/networks/FirebaseSignalingServer.js
 - js/networks/WebRTCClient.js
