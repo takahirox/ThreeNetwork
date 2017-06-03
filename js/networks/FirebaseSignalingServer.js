@@ -1,5 +1,17 @@
+/**
+ * @author Takahiro https://github.com/takahirox
+ *
+ * TODO:
+ *   support all authorize types.
+ */
+
 ( function () {
 
+	/**
+	 * FirebaseSignalingServer constructor.
+	 * FirebaseSignalingServer uses Firebase as a signaling server.
+	 * @param {object} params - parameters for instantiate and Firebase configuration (optional)
+	 */
 	THREE.FirebaseSignalingServer = function ( params ) {
 
 		if ( window.firebase === undefined ) {
@@ -8,58 +20,30 @@
 
 		}
 
-		this.id = '';
-		this.roomId = '';
+		if ( params === undefined ) params = {};
 
+		THREE.SignalingServer.call( this );
+
+		// Refer to Frebase document for them
 		this.apiKey = params.apiKey !== undefined ? params.apiKey : '';
 		this.authDomain = params.authDomain !== undefined ? params.authDomain : '';
 		this.databaseURL = params.databaseURL !== undefined ? params.databaseURL : '';
+
 		this.authType = params.authType !== undefined ? params.authType : 'anonymous';
 
-		this.onOpens = [];
-		this.onCloses = [];
-		this.onRemoteJoins = [];
-		this.onReceives = [];
-		this.onErrors = [];
-
 		this.init();
+		this.auth();
 
 	};
 
+	THREE.FirebaseSignalingServer.prototype = Object.create( THREE.SignalingServer.prototype );
+	THREE.FirebaseSignalingServer.prototype.constructor = THREE.FirebaseSignalingServer;
+
 	Object.assign( THREE.FirebaseSignalingServer.prototype, {
 
-		addEventListener: function ( type, func ) {
-
-			switch ( type ) {
-
-				case 'open':
-					this.onOpens.push( func );
-					break;
-
-				case 'close':
-					this.onCloses.push( func );
-					break;
-
-				case 'remotejoin':
-					this.onRemoteJoins.push( func );
-					break;
-
-				case 'receive':
-					this.onReceives.push( func );
-					break;
-
-				case 'error':
-					this.onErrors.push( func );
-					break;
-
-				default:
-					console.log( 'THREE.FirebaseSignalingServer.addEventListener: Unkknown type ' + type );
-					break;
-
-			}
-
-		},
-
+		/**
+		 * Initializes Firebase.
+		 */
 		init: function () {
 
 			firebase.initializeApp( {
@@ -68,10 +52,11 @@
 				databaseURL: this.databaseURL
 			} );
 
-			this.auth();
-
 		},
 
+		/**
+		 * Authorizes Firebase, depending on authorize type.
+		 */
 		auth: function () {
 
 			switch ( this.authType ) {
@@ -85,27 +70,36 @@
 					break;
 
 				default:
-					console.log( 'THREE.FirebaseSignalingServer.auth: Unkown authType ' + this.authType );
+					console.log( 'THREE.FirebaseSignalingServer.auth: Unknown authType ' + this.authType );
 					break;
 
 			}
 
 		},
 
+		/**
+		 * Doesn't authorize.
+		 */
 		authNone: function () {
 
 			var self = this;
 
+			// makes an unique 16-char id by myself.
+			var id = THREE.Math.generateUUID().replace( /-/g, '' ).toLowerCase().slice( 0, 16 );
+
+			// asynchronously invokes open listeners for the compatibility with other auth types.
 			requestAnimationFrame( function () {
 
-				var id = THREE.Math.generateUUID().replace( /-/g, '' ).toLowerCase().slice( 0, 16 );
 				self.id = id;
-				self.onOpen( id );
+				self.invokeOpenListeners( id );
 
 			} );
 
 		},
 
+		/**
+		 * Authorizes as anonymous.
+		 */
 		authAnonymous: function () {
 
 			var self = this;
@@ -114,7 +108,7 @@
 
 				console.log( 'THREE.FirebaseSignalingServer.authAnonymous: ' + error );
 
-				self.onError( error );
+				self.invokeErrorListeners( error );
 
 			} );
 
@@ -122,12 +116,16 @@
 
 				if ( user === null ) {
 
-					self.onClose( self.id );
+					// disconnected from server
+
+					self.invokeCloseListeners( self.id );
 
 				} else {
 
+					// authorized
+
 					self.id = user.uid;
-					self.onOpen( self.id );
+					self.invokeOpenListeners( self.id );
 
 				}
 
@@ -135,59 +133,10 @@
 
 		},
 
-		connect: function ( roomId ) {
-
-			var self = this;
-
-			this.roomId = roomId;
-
-			// TODO: check if this timescamp logic can race.
-			this.getTimestamp( function( timestamp ) {
-
-				var ref = firebase.database().ref( self.roomId + '/' + self.id );
-
-				ref.set( { timestamp: timestamp, signal: '' } );
-
-				ref.onDisconnect().remove();
-
-				var table = {};
-
-				firebase.database().ref( roomId ).on( 'child_added', function ( data ) {
-
-					var id = data.key;
-
-					if ( id === self.id || table[ id ] === true ) return;
-
-					table[ id ] = true;
-
-					var timestamp2 = data.val().timestamp;
-
-					firebase.database().ref( self.roomId + '/' + id + '/signal' ).on( 'value', function ( data ) {
-
-						if ( data.val() === null || data.val() === '' ) return;
-
-						self.onReceive( data.val() );
-
-					} );
-
-					self.onRemoteJoin( {
-						peer: id,
-						joinTimestamp: timestamp,
-						peerJoinTimestamp: timestamp2
-					} );
-
-				} );
-
-				firebase.database().ref( roomId ).on( 'child_removed', function ( data ) {
-
-					delete table[ data.key ];
-
-				} );
-
-			} );
-
-		},
-
+		/**
+		 * Gets server timestamp.
+		 * @param {function} callback
+		 */
 		getTimestamp: function ( callback ) {
 
 			var ref = firebase.database().ref( 'tmp' + '/' + this.id );
@@ -208,59 +157,62 @@
 
 		},
 
+		// public concrete method
+
+		connect: function ( roomId ) {
+
+			var self = this;
+
+			this.roomId = roomId;
+
+			// TODO: check if this timestamp logic can race.
+			this.getTimestamp( function( timestamp ) {
+
+				var ref = firebase.database().ref( self.roomId + '/' + self.id );
+
+				ref.set( { timestamp: timestamp, signal: '' } );
+
+				ref.onDisconnect().remove();
+
+				var doneTable = {};  // remote peer id -> true or undefined, indicates if already done.
+
+				firebase.database().ref( self.roomId ).on( 'child_added', function ( data ) {
+
+					var id = data.key;
+
+					if ( id === self.id || doneTable[ id ] === true ) return;
+
+					doneTable[ id ] = true;
+
+					var remoteTimestamp = data.val().timestamp;
+
+					// received signal
+					firebase.database().ref( self.roomId + '/' + id + '/signal' ).on( 'value', function ( data ) {
+
+						if ( data.val() === null || data.val() === '' ) return;
+
+						self.invokeReceiveListeners( data.val() );
+
+					} );
+
+					self.invokeRemoteJoinListeners(	id, timestamp, remoteTimestamp );
+
+				} );
+
+				firebase.database().ref( roomId ).on( 'child_removed', function ( data ) {
+
+					delete doneTable[ data.key ];
+
+				} );
+
+			} );
+
+		},
+
+		// TODO: we should enable .send() to send signal to a peer, not only broadcast?
 		send: function ( data ) {
 
 			firebase.database().ref( this.roomId + '/' + this.id + '/signal' ).set( data );
-
-		},
-
-		onOpen: function ( id ) {
-
-			for ( var i = 0, il = this.onOpens.length; i < il; i ++ ) {
-
-				this.onOpens[ i ]( id );
-
-			}
-
-		},
-
-		onClose: function ( id ) {
-
-			for ( var i = 0, il = this.onCloses.length; i < il; i ++ ) {
-
-				this.onCloses[ i ]( id );
-
-			}
-
-		},
-
-		onError: function ( error ) {
-
-			for ( var i = 0, il = this.onErrors.length; i < il; i ++ ) {
-
-				this.onErrors[ i ]( error );
-
-			}
-
-		},
-
-		onRemoteJoin: function ( params ) {
-
-			for ( var i = 0, il = this.onRemoteJoins.length; i < il; i ++ ) {
-
-				this.onRemoteJoins[ i ]( params );
-
-			}
-
-		},
-
-		onReceive: function ( signal ) {
-
-			for ( var i = 0, il = this.onReceives.length; i < il; i ++ ) {
-
-				this.onReceives[ i ]( signal );
-
-			}
 
 		}
 
