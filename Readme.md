@@ -74,6 +74,13 @@ T.B.D.
   function connect( roomId ) {
     remoteSync.connect( roomId );
   }
+  
+  // sync and render
+  function render() {
+    requestAnimationFrame( render );
+    remoteSync.sync();
+    renderer.render( scene, camera );
+  }
 ```
 
 ## Concept
