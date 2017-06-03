@@ -27,8 +27,11 @@
 		THREE.NetworkClient.call( this, params );
 
 		// Refer to PeerJS document for them.
-		this.apikey = params.apikey !== undefined ? params.apikey : '';
+		this.key = params.key !== undefined ? params.key : '';
 		this.debugLevel = params.debugLevel !== undefined ? params.debugLevel : 0;
+		this.host = params.host !== undefined ? params.host : '';
+		this.port = params.port !== undefined ? params.port : null;
+		this.path = params.path !== undefined ? params.path : '';
 
 		// Set true if PeerJS server allow_discovery is true.
 		this.allowDiscovery = params.allowDiscovery !== undefined ? params.allowDiscovery : false;
@@ -52,7 +55,12 @@
 
 			var self = this;
 
-			var param = { key: this.apikey, debug: this.debugLevel };
+			var param = { debug: this.debugLevel };
+
+			if ( this.key !== '' ) param.key = this.key;
+			if ( this.host !== '' ) param.host = this.host;
+			if ( this.port !== null ) param.port = this.port;
+			if ( this.path !== '' ) param.path = this.path;
 
 			var peer = this.id !== '' ? new Peer( this.id, param ) : new Peer( param );
 

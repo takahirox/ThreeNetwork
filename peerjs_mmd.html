@@ -65,10 +65,11 @@
 
 				remoteSync = new THREE.RemoteSync(
 					new THREE.PeerJSClient( {
-						apikey: 'your-api', // http://peerjs.com/peerserver
-						debugLevel: 0,
+						key: 'your-api', // http://peerjs.com/peerserver
+						debugLevel: 0
 					} )
 				);
+
 				remoteSync.addEventListener( 'open', onOpen );
 				remoteSync.addEventListener( 'close', onClose );
 				remoteSync.addEventListener( 'error', onError );
