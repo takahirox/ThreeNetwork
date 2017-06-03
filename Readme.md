@@ -17,6 +17,7 @@ ThreeNetwork is real-time network library for Three.js. ThreeNetwork synchronize
 T.B.D.
 
 - easy to setup and use
+- multi-user
 - low latency with WebRTC
 
 # Instruction
@@ -43,7 +44,7 @@ T.B.D.
     )
   );
 
-  // when connects with signaling server
+  // when connects signaling server
   remoteSync.addEventListener( 'open', function ( id ) {
     localId = id;
     var localMesh = new THREE.Mesh(...);
@@ -69,6 +70,11 @@ T.B.D.
   remoteSync.addEventListener( 'remove', function ( remotePeerId, objectId, object ) {
     if ( object.parent !== null ) object.parent.remove( object );
   } );
+  
+  // Joins a room
+  function connect( roomId ) {
+    remoteSync.connect( roomId );
+  }
 ```
 
 ## Concept
