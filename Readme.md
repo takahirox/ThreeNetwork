@@ -19,10 +19,11 @@ ThreeNetwork is real-time network library for Three.js. ThreeNetwork synchronize
 - multi-user with room system
 - low latency with WebRTC
 - efficient data transfer
+- media streaming(audio, video) support
 
 ## Sample code
 
-Import js/networks/RemoteSync.js and client(s) you want to use.
+Import `js/networks/RemoteSync.js` and client(s) depending on your platform.
 
 ```javascript
 <script src="https://rawgit.com/mrdoob/three.js/r85/build/three.js"></script>
@@ -250,23 +251,23 @@ and NetworkClient & Signaling server depending on your platform.
 
 ## API
 
-T.B.D.
-
 `RemoteSync`
-- `addLocalObject`
-- `addSharedObject`
-- `addRemoteObject`
-- `sync`
-- `connect`
-- `sendUserData`, `broadcastUserData`
-- `addEventListener`
-  - `open`
-  - `close`
-  - `error`
-  - `connect`
-  - `disconnect`
-  - `add`
-  - `remove`
-  - `receive`
-  - `remote_stream`
-  - `receive_user_data`
+- `addLocalObject( object, info )`: Registers a Local object. Local object's status will be sent to remote by invoking `.sync()`. Local object addition with `info` will be notified to remote peers' `add` event listener.
+- `addRemoteObject( remotePeerId, objectUuid, object )`: Registers a Remote object. Remote object's status reflect to a corresponding remote peer's local object. This metho is assumed to be called in `add` event listener callback function.
+- `addSharedObject( object, sharedId )`: Registers a Shared object. Shared object's status will be sent to remote by invokind `.sync()` and aldo reglect corresponding remote peers' Shared object. Shared object will bind with remote peers' shared object assigned the same shared id.
+- `removeLocalObject( object )`: Removes a Local object from `RemoteSync`.
+- `removeSharedObject( sharedId )`: Unbinds Shared object.
+- `sync( force, onlyLocal )`: Broadcasts registered Local and Shared objects' status to remote peers.
+- `connect( id )`: Connects a room or a remote peer (depending on platform)
+- `sendUserData( remotePeerId, data )`, `broadcastUserData( data )`: Sends/Broadcasts user-data to remote peer(s). These methods invoking will be notified to Remote peers' `receive_user_data`.
+-- `addEventListener`: Adds event listener.
+  - `open` ( peerId ): When connected with server.
+  - `close` ( peerId ): When disconnected from server.
+  - `error` ( errorMessage ): When error occurs.
+  - `connect` ( remotePeerId ): When connected with a remote peer.
+  - `disconnect` ( remotePeerId ): When disconnected from a remote peer.
+  - `add` ( remotePeerId, objectUuid, info ): When a remote peer adds its local object.
+  - `remove` ( remotePeerId, objectUuid, remoteObject ): When a remote peer removes its local object.
+  - `receive` (data): When receives data from a remote peer.
+  - `remote_stream` (stream): When receives media streaming from a remote peer.
+  - `receive_user_data` (data): When received user-data from a remote peer.
