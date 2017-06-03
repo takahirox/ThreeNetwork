@@ -1,6 +1,18 @@
+/**
+ * @author Takahiro https://github.com/takahirox
+ */
+
 ( function () {
 
+	/**
+	 * WebRTCClient constructor.
+	 * General WebRTC Client, establishes a connection via Signaling server.
+	 * @param {THREE.SignalingServer} server
+	 * @param {object} params - parameters for instantiate (optional)
+	 */
 	THREE.WebRTCClient = function ( server, params ) {
+
+		if ( params === undefined ) params = {};
 
 		THREE.NetworkClient.call( this, params );
 
@@ -15,81 +27,138 @@
 
 	Object.assign( THREE.WebRTCClient.prototype, {
 
+		/**
+		 * Initializes signaling server event listener.
+		 */
 		init: function () {
 
 			var self = this;
 
-			this.server.addEventListener( 'open', function ( id ) { self.onOpen( id ); } );
-			this.server.addEventListener( 'close', function ( id ) { self.onClose( id ); } );
-			this.server.addEventListener( 'error', function ( error ) { self.onError( error ); } );
+			// connected with server
+			this.server.addEventListener( 'open',
 
-			this.server.addEventListener( 'receive', function ( signal ) {
+				function ( id ) {
 
-				for ( var i = 0, il = self.connections.length; i < il; i ++ ) {
-
-					self.connections[ i ].onReceiveSignal( signal );
+					self.invokeOpenListeners( id );
 
 				}
 
-			} );
+			);
 
-			this.server.addEventListener( 'remotejoin', function ( params ) {
+			// disconnected from server
+			this.server.addEventListener( 'close',
 
-				var id = params.peer;
+				function ( id ) {
+
+					self.invokeCloseListeners( id );
+
+				}
+
+			);
+
+			// error occurred with server
+			this.server.addEventListener( 'error',
+
+				function ( error ) {
+
+					self.invokeErrorListeners( error );
+
+				}
+
+			);
+
+			// aware of a remote peer join the room
+			this.server.addEventListener( 'remote_join', function ( id, localTimestamp, remoteTimestamp ) {
 
 				if ( id === self.id || self.hasConnection( id ) ) return;
 
-				var timestamp = params.joinTimestamp;
-				var timestamp2 = params.peerJoinTimestamp;
-
-				// TODO: need a workaround for timestamp === timestamp2
-				var connectFromMe = timestamp > timestamp2;
+				// TODO: need a workaround for localTimestamp === remoteTimestamp
+				var connectFromMe = localTimestamp > remoteTimestamp;
 
 				var peer = new WebRTCPeer( self.id, id, self.server, self.stream );
 
+				// received signal from a remote peer via server
+				self.server.addEventListener( 'receive',
+
+					function ( signal ) {
+
+						peer.handleSignal( signal );
+
+					}
+
+				);
+
+				// connected with a remote peer
 				peer.addEventListener( 'open', function ( id ) {
 
-					self.onConnect( id, ! connectFromMe );
+					if ( self.addConnection( id, peer ) ) {
+
+						self.invokeConnectListeners( id, ! connectFromMe );
+
+					}
+
+					// TODO: remove server 'receive' listener here.
+					//       if .addConnection() fails here?
 
 				} );
 
+				// disconnected from a remote peer
 				peer.addEventListener( 'close', function ( id ) {
 
-					if ( self.removeConnection( id ) ) self.onDisconnect( id );
+					if ( self.removeConnection( id ) ) {
+
+						// TODO: remove server 'receive' listener here.
+
+						self.invokeDisconnectListeners( id );
+
+					}
 
 				} );
 
+				// error occurred with a remote peer
 				peer.addEventListener( 'error', function ( error ) {
 
-					self.onError( error );
+					self.invokeErrorListeners( error );
 
 				} );
 
-				peer.addEventListener( 'receive', function ( message ) {
+				// received data from a remote peer
+				peer.addEventListener( 'receive', function ( data ) {
 
-					self.onReceive( message );
-
-				} );
-
-				peer.addEventListener( 'receivestream', function ( stream ) {
-
-					self.onRemoteStream( stream );
+					self.invokeReceiveListeners( data );
 
 				} );
 
-				self.addConnection( id, peer );
+				// received remote media streaming
+				peer.addEventListener( 'receive_stream', function ( stream ) {
+
+					self.invokeRemoteStreamListeners( stream );
+
+				} );
 
 				if ( connectFromMe ) peer.offer();
 
 			} );
 
+			// for the compatibility with other NetworkClient classes.
+			// if already connected with signaling server, asynchronously invokes open listeners.
 			if ( this.server.id !== '' ) {
 
-				requestAnimationFrame( function () { self.onOpen( self.server.id ); } );
+				requestAnimationFrame(
+
+					function () {
+
+						self.invokeOpenListeners( self.server.id );
+
+					}
+
+				);
 
 			}
 
 		},
+
+		// public concrete method
 
 		connect: function ( roomId ) {
 
@@ -123,6 +192,8 @@
 
 	} );
 
+	// ice servers for RTCPeerConnection.
+
 	var ICE_SERVERS = [
 		{ url: 'stun:stun.l.google.com:19302' },
 		{ url: 'stun:stun1.l.google.com:19302' },
@@ -131,6 +202,15 @@
 		{ url: 'stun:stun4.l.google.com:19302' }
 	];
 
+	/**
+	 * WebRTCPeer constructor.
+	 * WebRTCPeer handles WebRTC connection and data transfer with RTCPeerConnection.
+	 * Refer to RTCPeerConnection document for the message handling detail.
+	 * @param {string} id - local peer id
+	 * @param {string} peer - remote peer id
+	 * @param {SignalingServer} server
+	 * @param {MediaStream} stream - sends media stream to remote peer if it's provided (optional)
+	 */
 	var WebRTCPeer = function ( id, peer, server, stream ) {
 
 		this.id = id;
@@ -138,16 +218,36 @@
 		this.server = server;
 		this.pc = this.createPeerConnection( stream );
 
+		// event listeners
+
 		this.onOpens = [];
 		this.onCloses = [];
+		this.onErrors = [];
 		this.onReceives = [];
 		this.onReceiveStreams = [];
-		this.onErrors = [];
 
 	};
 
 	Object.assign( WebRTCPeer.prototype, {
 
+		/**
+		 * Adds EventListener. Callback function will be invoked when
+		 * 'open': a connection is established with a remote peer
+		 * 'close': a connection is disconnected from a remote peer
+		 * 'error': error occurs
+		 * 'receive': receives data from a remote peer
+		 * 'remote_stream': receives a remote media stream
+		 *
+		 * Arguments for callback functions are
+		 * 'open': {string} local peer id
+		 * 'close': {string} local peer id
+		 * 'error': {string} error message
+		 * 'receive': {anything} signal sent from a remote peer
+		 * 'remote_stream': {MediaStream} remote media stream
+		 *
+		 * @param {string} type - event type
+		 * @param {function} func - callback function
+		 */
 		addEventListener: function ( type, func ) {
 
 			switch ( type ) {
@@ -160,76 +260,31 @@
 					this.onCloses.push( func );
 					break;
 
-				case 'receive':
-					this.onReceives.push( func );
-					break;
-
-				case 'receivestream':
-					this.onReceiveStreams.push( func );
-					break;
-
 				case 'error':
 					this.onErrors.push( func );
 					break;
 
+				case 'receive':
+					this.onReceives.push( func );
+					break;
+
+				case 'receive_stream':
+					this.onReceiveStreams.push( func );
+					break;
+
 				default:
-					console.log( 'WebRTCPeer.addEventListener: Unkown type ' + type );
+					console.log( 'WebRTCPeer.addEventListener: Unknown type ' + type );
 					break;
 
 			}
 
 		},
 
-		onOpen: function ( id ) {
-
-			for ( var i = 0, il = this.onOpens.length; i < il; i ++ ) {
-
-				this.onOpens[ i ]( id );
-
-			}
-
-		},
-
-		onClose: function ( id ) {
-
-			for ( var i = 0, il = this.onCloses.length; i < il; i ++ ) {
-
-				this.onCloses[ i ]( id );
-
-			}
-
-		},
-
-		onReceive: function ( message ) {
-
-			for ( var i = 0, il = this.onReceives.length; i < il; i ++ ) {
-
-				this.onReceives[ i ]( message );
-
-			}
-
-		},
-
-		onReceiveStream: function ( stream ) {
-
-			for ( var i = 0, il = this.onReceiveStreams.length; i < il; i ++ ) {
-
-				this.onReceiveStreams[ i ]( stream );
-
-			}
-
-		},
-
-		onError: function ( error ) {
-
-			for ( var i = 0, il = this.onErrors.length; i < il; i ++ ) {
-
-				this.onErrors[ i ]( error );
-
-			}
-
-		},
-
+		/**
+		 * Creates peer connection.
+		 * @param {MediaStream} stream - sends media stream to remote if it's provided (optional)
+		 * @returns {RTCPeerConnection}
+		 */
 		createPeerConnection: function ( stream ) {
 
 			var self = this;
@@ -241,13 +296,13 @@
 
 			if ( RTCPeerConnection === undefined ) {
 
-				throw new Error( 'Peer: This browser does not seem to support WebRTC.' );
+				throw new Error( 'WebRTCPeer.createPeerConnection: This browser does not seem to support WebRTC.' );
 
 			}
 
 			var pc = new RTCPeerConnection( { 'iceServers': ICE_SERVERS } );
 
-			if ( stream !== null ) pc.addStream( stream );
+			if ( stream !== null && stream !== undefined ) pc.addStream( stream );
 
 			pc.onicecandidate = function ( event ) {
 
@@ -269,7 +324,7 @@
 
 			pc.onaddstream = function ( event ) {
 
-				self.onReceiveStream( event.stream );
+				self.invokeReceiveStreamListeners( event.stream );
 
 			};
 
@@ -277,33 +332,11 @@
 
 		},
 
-		onReceiveSignal: function ( signal ) {
-
-			if ( this.id !== signal.peer || this.peer !== signal.id ) return;
-
-			switch ( signal.type ) {
-
-				case 'offer':
-					this.onReceiveOffer( signal );
-					break;
-
-				case 'answer':
-					this.onReceiveAnswer( signal );
-					break;
-
-				case 'candidate':
-					this.onReceiveCandidate( signal );
-					break;
-
-				default:
-					console.log( 'WebRTCPeer: Unknown signal type ' + signal.type );
-					break;
-
-			}
-
-		},
-
-		onReceiveOffer: function ( message ) {
+		/**
+		 * Handles offer request.
+		 * @param {object} message - message sent from a remote peer
+		 */
+		handleOffer: function ( message ) {
 
 			var self = this;
 
@@ -320,14 +353,14 @@
 
 				function ( sdp ) {
 
-					self.onReceiveSDP( sdp );
+					self.handleSessionDescription( sdp );
 
 				},
 
 				function ( error ) {
 
-					console.log( error );
-					self.onError( error );
+					console.log( 'WebRTCPeer.handleOffer: ' + error );
+					self.invokeErrorListeners( error );
 
 				}
 
@@ -335,13 +368,21 @@
 
 		},
 
-		onReceiveAnswer: function ( message ) {
+		/**
+		 * Handles answer response.
+		 * @param {object} message - message sent from a remote peer
+		 */
+		handleAnswer: function ( message ) {
 
 			this.setRemoteDescription( message );
 
 		},
 
-		onReceiveCandidate: function ( message ) {
+		/**
+		 * Handles candidate sent from a remote peer.
+		 * @param {object} message - message sent from a remote peer
+		 */
+		handleCandidate: function ( message ) {
 
 			var self = this;
 
@@ -357,8 +398,8 @@
 
 				function ( error ) {
 
-					console.log( error );
-					self.onError( error );
+					console.log( 'WebRTCPeer.handleCandidate: ' + error );
+					self.invokeErrorListeners( error );
 
 				}
 
@@ -366,7 +407,11 @@
 
 		},
 
-		onReceiveSDP: function ( sdp ) {
+		/**
+		 * Handles SessionDescription.
+		 * @param {RTCSessionDescription} sdp
+		 */
+		handleSessionDescription: function ( sdp ) {
 
 			var self = this;
 
@@ -376,8 +421,8 @@
 
 				function ( error ) {
 
-					console.log( error );
-					self.onError( error );
+					console.log( 'WebRTCPeer.handleSessionDescription: ' + error );
+					self.invokeErrorListeners( error );
 
 				}
 
@@ -392,6 +437,10 @@
 
 		},
 
+		/**
+		 * Sets remote description.
+		 * @param {object} message - message sent from a remote peer
+		 */
 		setRemoteDescription: function ( message ) {
 
 			var self = this;
@@ -409,8 +458,8 @@
 
 				function ( error ) {
 
-					console.log( error );
-					self.onError( error );
+					console.log( 'WebRTCPeer.setRemoteDescription: ' + error );
+					self.invokeErrorListeners( error );
 
 				}
 
@@ -418,6 +467,100 @@
 
 		},
 
+		/**
+		 * Sets up channel listeners.
+		 */
+		setupChannelListener: function () {
+
+			var self = this;
+
+			// received data from a remote peer
+			this.channel.onmessage = function ( event ) {
+
+				self.invokeReceiveListeners( JSON.parse( event.data ) );
+
+			};
+
+			// connected with a remote peer
+			this.channel.onopen = function ( event ) {
+
+				self.invokeOpenListeners( self.peer );
+
+			};
+
+			// disconnected from a remote peer
+			this.channel.onclose = function ( event ) {
+
+				self.invokeCloseListeners( self.peer );
+
+			};
+
+			// error occurred with a remote peer
+			this.channel.onerror = function( error ) {
+
+				self.invokeErrorListeners( error );
+
+			};
+
+		},
+
+		// event listeners, refer to .addEventListeners() comment for the arguments.
+
+		invokeOpenListeners: function ( id ) {
+
+			for ( var i = 0, il = this.onOpens.length; i < il; i ++ ) {
+
+				this.onOpens[ i ]( id );
+
+			}
+
+		},
+
+		invokeCloseListeners: function ( id ) {
+
+			for ( var i = 0, il = this.onCloses.length; i < il; i ++ ) {
+
+				this.onCloses[ i ]( id );
+
+			}
+
+		},
+
+		invokeErrorListeners: function ( error ) {
+
+			for ( var i = 0, il = this.onErrors.length; i < il; i ++ ) {
+
+				this.onErrors[ i ]( error );
+
+			}
+
+		},
+
+		invokeReceiveListeners: function ( message ) {
+
+			for ( var i = 0, il = this.onReceives.length; i < il; i ++ ) {
+
+				this.onReceives[ i ]( message );
+
+			}
+
+		},
+
+		invokeReceiveStreamListeners: function ( stream ) {
+
+			for ( var i = 0, il = this.onReceiveStreams.length; i < il; i ++ ) {
+
+				this.onReceiveStreams[ i ]( stream );
+
+			}
+
+		},
+
+		// public
+
+		/**
+		 * Sends connection request (offer) to a remote peer.
+		 */
 		offer: function () {
 
 			var self = this;
@@ -430,7 +573,7 @@
 
 				function ( sdp ) {
 
-					self.onReceiveSDP( sdp );
+					self.handleSessionDescription( sdp );
 
 				},
 
@@ -445,39 +588,44 @@
 
 		},
 
+		/**
+		 * Sends data to a remote peer.
+		 * @param {anything} data
+		 */
 		send: function ( data ) {
 
 			this.channel.send( JSON.stringify( data ) );
 
 		},
 
-		setupChannelListener: function ( channel ) {
+		/**
+		 * Handles signal sent from a remote peer via server.
+		 * @param {object} signal - must have .peer as destination peer id and .id as source peer id
+		 */
+		handleSignal: function ( signal ) {
 
-			var self = this;
+			// ignores signal if it isn't for me
+			if ( this.id !== signal.peer || this.peer !== signal.id ) return;
 
-			this.channel.onmessage = function ( event ) {
+			switch ( signal.type ) {
 
-				self.onReceive( JSON.parse( event.data ) );
+				case 'offer':
+					this.handleOffer( signal );
+					break;
 
-			};
+				case 'answer':
+					this.handleAnswer( signal );
+					break;
 
-			this.channel.onopen = function ( event ) {
+				case 'candidate':
+					this.handleCandidate( signal );
+					break;
 
-				self.onOpen( self.peer );
+				default:
+					console.log( 'WebRTCPeer: Unknown signal type ' + signal.type );
+					break;
 
-			};
-
-			this.channel.onclose = function ( event ) {
-
-				self.onClose( self.peer );
-
-			};
-
-			this.channel.onerror = function( error ) {
-
-				self.onError( error );
-
-			};
+			}
 
 		}
 
