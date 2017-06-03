@@ -23,75 +23,144 @@ T.B.D.
 
 ## Sample code
 
+Import js/networks/RemoteSync.js and client(s) you want to use.
+
 ```javascript
-  <script src="https://rawgit.com/mrdoob/three.js/r85/build/three.js"></script>
+<script src="https://rawgit.com/mrdoob/three.js/r85/build/three.js"></script>
 
-  <script src="js/networks/RemoteSync.js"></script>
-  <script src="js/networks/FirebaseSignalingServer.js"></script>
-  <script src="js/controls/WebRTCClient.js"></script>
+<script src="js/networks/RemoteSync.js"></script>
+<script src="js/networks/FirebaseSignalingServer.js"></script>
+<script src="js/controls/WebRTCClient.js"></script>
 
-  var remoteSync, localId;
+var remoteSync, localId;
 
-  remoteSync = new THREE.RemoteSync(
-    new THREE.WebRTCClient(
-      new THREE.FirebaseSignalingServer( {
-        authType: 'anonymous',
-        apiKey: 'your-api',
-        authDomain: 'your-project.firebaseapp.com',
-        databaseURL: 'https://your-project.firebaseio.com'
-      } )
-    )
-  );
+remoteSync = new THREE.RemoteSync(
+  new THREE.WebRTCClient(
+    new THREE.FirebaseSignalingServer( {
+      authType: 'anonymous',
+      apiKey: 'your-api',
+      authDomain: 'your-project.firebaseapp.com',
+      databaseURL: 'https://your-project.firebaseio.com'
+    } )
+  )
+);
 
-  // when connects signaling server
-  remoteSync.addEventListener( 'open', function ( id ) {
-    localId = id;
-    var localMesh = new THREE.Mesh(...);
-    remoteSync.addLocalObject( localMesh, { type: 'mesh' } );
-    scene.add( localMesh );
-  } );
+// when connects signaling server
+remoteSync.addEventListener( 'open', function ( id ) {
+  localId = id;
+  var localMesh = new THREE.Mesh(...);
+  remoteSync.addLocalObject( localMesh, { type: 'mesh' } );
+  scene.add( localMesh );
+} );
 
-  // when remote adds an object
-  remoteSync.addEventListener( 'add', function ( remotePeerId, objectId, info ) {
-    var remoteMesh;
-    switch( info.type ) {
-      case 'mesh':
-        remoteMesh = new THREE.Mesh(...);
-        break;
-      default:
-        return;
-    }
-    scene.add( remoteMesh );
-    remoteSync.addRemoteObject( remotePeerId, objectId, remoteMesh );
-  } );
-
-  // when remote removes an object
-  remoteSync.addEventListener( 'remove', function ( remotePeerId, objectId, object ) {
-    if ( object.parent !== null ) object.parent.remove( object );
-  } );
-  
-  // Joins a room
-  function connect( roomId ) {
-    remoteSync.connect( roomId );
+// when remote adds an object
+remoteSync.addEventListener( 'add', function ( remotePeerId, objectId, info ) {
+  var remoteMesh;
+  switch( info.type ) {
+    case 'mesh':
+      remoteMesh = new THREE.Mesh(...);
+      break;
+    default:
+      return;
   }
+  scene.add( remoteMesh );
+  remoteSync.addRemoteObject( remotePeerId, objectId, remoteMesh );
+} );
+
+// when remote removes an object
+remoteSync.addEventListener( 'remove', function ( remotePeerId, objectId, object ) {
+  if ( object.parent !== null ) object.parent.remove( object );
+} );
   
-  // sync and render
-  function render() {
-    requestAnimationFrame( render );
-    remoteSync.sync();
-    renderer.render( scene, camera );
-  }
+// Joins a room
+function connect( roomId ) {
+  remoteSync.connect( roomId );
+}
+  
+// sync and render
+function render() {
+  requestAnimationFrame( render );
+  remoteSync.sync();
+  renderer.render( scene, camera );
+}
 ```
 
 ## Setup with servers
 
-T.B.D.
+### PeerJS + PeerServer Cloud service
 
-### PeerJS
+The easiest way is to use [PeerServer Cloud service](http://peerjs.com/peerserver) of PeerJS.
+
+1. Go to [PeerServer Cloud service](http://peerjs.com/peerserver)
+2. Get API
+3. Pass the API to PeerJSClient.
+
+```javascript
+<script src="https://rawgit.com/mrdoob/three.js/r85/build/three.js"></script>
+<script src="js/networks/RemoteSync.js"></script>
+<script src="js/controls/PeerJSClient.js"></script>
+
+remoteSync = new THREE.RemoteSync(
+  new THREE.PeerJSClient( {
+    key: 'your-api'
+  } )
+);
+```
+
+Note that PeerServer Cloud service has limitation.
+
+- Up to 50 concurrent connections
+- No room system, a peer can't know other remote peers connected to the server
+
+Then you need to pass a remote peer's id you wanna connect to .connect(). (So, maybe the remote peer needs to share its id with you beforehand.)
+
+```javascript
+remoteSystem.connect( 'remote-peer-id' );
+```
+If you wanna avoid these limitation, you need to run your own PeerServer.
+
+### PeerJS + Your own PeerServer
+
+1. Go to [peerjs-server GitHub](https://github.com/peers/peerjs-server)
+2. Follow the instruction and run your own server
+3. Set "allowDiscovery: true" of PeerJSClient, and pass host, port, path to it.
+
+```javascript
+<script src="https://rawgit.com/mrdoob/three.js/r85/build/three.js"></script>
+<script src="js/networks/RemoteSync.js"></script>
+<script src="js/controls/PeerJSClient.js"></script>
+
+remoteSync = new THREE.RemoteSync(
+  new THREE.PeerJSClient( {
+    allowDiscovery: true,
+    host: 'hostname',
+    port: portnum,
+    path: path
+  } )
+);
+```
+
+PeerJSClient acts as there's one room in the server then you don't need to pass id to .connect().
+
+```javascript
+remoteSystem.connect( '' );
+```
 
 ### Firebase
 
+T.B.D.
+
+1. Firebase console
+2. Setup Open realtime database
+3. Setup Authorize
+
+### Firebase + WebRTC
+
+T.B.D.
+
 ### EasyRTC
+
+T.B.D.
 
 ## Concept
 
