@@ -1,14 +1,19 @@
+/**
+ * @author Takahiro https://github.com/takahirox
+ */
+
 ( function () {
 
-	var SNOOPLIST_TYPE = 'snoop';
-
-	var SNOOPLIST_COMPONENT = {
-		type: SNOOPLIST_TYPE,
-		list: []
-	};
-
-	// TODO: support packet loss recover
-
+	/**
+	 * PeerJSClient constructor.
+	 * PeerJSClient is a PeerJS based NetworkClient concrete class.
+	 * PeerJSClient acts depending on PeerJS server allow_discovery configuration.
+	 * If allow_discovery is true, it acts as there is only one room in the PeerJS server.
+	 * Otherwise, it acts as there is no room system in the server and connects a
+	 * specified remote peer, exchanges the connected peers list, and then connects
+	 * other listed peers (I call this snoop here).
+	 * @param {object} params - instantiate parameters (optional)
+	 */
 	THREE.PeerJSClient = function ( params ) {
 
 		if ( window.Peer === undefined ) {
@@ -21,8 +26,11 @@
 
 		THREE.NetworkClient.call( this, params );
 
+		// Refer to PeerJS document for them.
 		this.apikey = params.apikey !== undefined ? params.apikey : '';
 		this.debugLevel = params.debugLevel !== undefined ? params.debugLevel : 0;
+
+		// Set true if PeerJS server allow_discovery is true.
 		this.allowDiscovery = params.allowDiscovery !== undefined ? params.allowDiscovery : false;
 
 		this.peer = this.createPeer();
@@ -34,6 +42,12 @@
 
 	Object.assign( THREE.PeerJSClient.prototype, {
 
+		// private
+
+		/**
+		 * Creates Peer instance.
+		 * @returns {Peer}
+		 */
 		createPeer: function () {
 
 			var self = this;
@@ -42,41 +56,44 @@
 
 			var peer = this.id !== '' ? new Peer( this.id, param ) : new Peer( param );
 
+			// connected with PeerJS server
 			peer.on( 'open', function ( id ) {
 
-				self.id = id;
-
-				self.onOpen( id );
+				self.invokeOpenListeners( id );
 
 			} );
 
+			// disconnected from PeerJS server
 			peer.on( 'close', function ( id ) {
 
-				self.onClose( id );
+				self.invokeCloseListeners( id );
 
 			} );
 
+			// connected with a remote peer
 			peer.on( 'connection', function ( connection ) {
 
 				self.connected( connection, true );
 
 			} );
 
+			// received a call(streaming) from a remote peer
 			peer.on( 'call', function ( call ) {
 
 				call.answer( self.stream );
 
 				call.on( 'stream', function ( remoteStream ) {
 
-					self.onRemoteStream( remoteStream );
+					self.invokeRemoteStreamListeners( remoteStream );
 
 				} );
 
 			} );
 
+			// error occurred with PeerJS server
 			peer.on( 'error', function ( error ) {
 
-				self.onError( error );
+				self.invokeErrorListeners( error );
 
 			} );
 
@@ -84,34 +101,11 @@
 
 		},
 
-		connect: function ( destPeerId ) {
-
-			if ( this.allowDiscovery ) {
-
-				// ignores destPeerId (=roomId here) because of only one room in PeerJS Server
-
-				var self = this;
-
-				this.peer.listAllPeers( function ( list ) {
-
-					for ( var i = 0, il = list.length; i < il; i ++ ) {
-
-						var id = list[ i ];
-
-						if ( ! self.hasConnection( id ) ) self.connected( self.peer.connect( id ), false );
-
-					}
-
-				} );
-
-			} else {
-
-				this.connected( this.peer.connect( destPeerId ), false );
-
-			}
-
-		},
-
+		/**
+		 * Sets up and adds connection.
+		 * @param {object} connection 
+		 * @param {boolean} fromRemote - if a remote peer sends connection request
+		 */
 		connected: function ( connection, fromRemote ) {
 
 			var self = this;
@@ -122,35 +116,42 @@
 
 			connection.on( 'open', function() {
 
+				// received data from a remote peer
 				connection.on( 'data', function( data ) {
 
 					if ( data.type === SNOOPLIST_TYPE ) {
 
-						self.snoop( data );
+						self.snoop( data.list );
 
 					} else {
 
-						self.onReceive( data );
+						self.invokeReceiveListeners( data );
 
 					}
 
 				} );
 
+				// disconnected from a remote peer
 				connection.on( 'close', function () {
 
-					if ( self.removeConnection( id ) ) self.onDisconnect( id );
+					if ( self.removeConnection( id ) ) {
+
+						self.invokeDisconnectListeners( id );
+
+					}
 
 				} );
 
+				// error occurred with a remote peer
 				connection.on( 'error', function ( error ) {
 
-					self.onError( error );
+					self.invokeErrorListeners( error );
 
 				} );
 
-				self.onConnect( id, fromRemote );
+				self.invokeConnectListeners( id, fromRemote );
 
-				if ( ! self.allowDiscovery ) self.sendSnoopList( id );
+				if ( ! self.allowDiscovery ) self.sendPeersList( id );
 
 				if ( self.stream !== null && ! fromRemote ) self.call( id );
 
@@ -158,7 +159,11 @@
 
 		},
 
-		sendSnoopList: function ( id ) {
+		/**
+		 * Sends connected peers list to a remote peer for snoop.
+		 * @param {string} id - remote peer id
+		 */
+		sendPeersList: function ( id ) {
 
 			var component = SNOOPLIST_COMPONENT;
 			var list = component.list;
@@ -178,17 +183,73 @@
 
 		},
 
-		snoop: function ( component ) {
+		/**
+		 * Starts snoop.
+		 * @param {Array} peers - peers list sent from a remote peer
+		 */
+		snoop: function ( peers ) {
 
-			var list = component.list;
+			for ( var i = 0, il = peers.length; i < il; i ++ ) {
 
-			for ( var i = 0, il = list.length; i < il; i ++ ) {
-
-				var id = list[ i ];
+				var id = peers[ i ];
 
 				if ( id === this.id || this.hasConnection( id ) ) continue;
 
 				this.connect( id );
+
+			}
+
+		},
+
+		/**
+		 * Starts call(streaming).
+		 * @param {string} id - remote peer id
+		 */
+		call: function ( id ) {
+
+			var call = this.peer.call( id, this.stream );
+
+			call.on( 'stream', function ( remoteStream ) {
+
+				self.onRemoteStream( remoteStream );
+
+			} );
+
+		},
+
+		// public concrete method
+
+		connect: function ( destPeerId ) {
+
+			if ( this.allowDiscovery ) {
+
+				// ignores destPeerId because of only one room in PeerJS Server
+
+				var self = this;
+
+				// get peers list from the server and connects them
+
+				this.peer.listAllPeers( function ( list ) {
+
+					for ( var i = 0, il = list.length; i < il; i ++ ) {
+
+						var id = list[ i ];
+
+						if ( ! self.hasConnection( id ) ) {
+
+							self.connected( self.peer.connect( id ), false );
+
+						}
+
+					}
+
+				} );
+
+			} else {
+
+				// connects a specified remote peer
+
+				this.connected( this.peer.connect( destPeerId ), false );
 
 			}
 
@@ -212,20 +273,17 @@
 
 			}
 
-		},
-
-		call: function ( id ) {
-
-			var call = this.peer.call( id, this.stream );
-
-			call.on( 'stream', function ( remoteStream ) {
-
-				self.onRemoteStream( remoteStream );
-
-			} );
-
 		}
 
 	} );
+
+	// component for snoop
+
+	var SNOOPLIST_TYPE = 'snoop';
+
+	var SNOOPLIST_COMPONENT = {
+		type: SNOOPLIST_TYPE,
+		list: []
+	};
 
 } )();
