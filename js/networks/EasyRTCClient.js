@@ -1,7 +1,18 @@
+/**
+ * @author Takahiro https://github.com/takahirox
+ *
+ * TODO
+ *   support media streaming
+ *   optimize?
+ */
+
 ( function () {
 
-	var MESSAGE_TYPE = 'message';
-
+	/**
+	 * EasyRTCClient constructor.
+	 * EasyRTCClient is a EasyRTC based NetworkClient concrete class.
+	 * @param {object} params - instantiate parameters (optional)
+	 */
 	THREE.EasyRTCClient = function ( params ) {
 
 		if ( window.easyrtc === undefined ) {
@@ -27,25 +38,34 @@
 
 	Object.assign( THREE.EasyRTCClient.prototype, {
 
+		/**
+		 * Initializes EasyRTC.
+		 */
 		init: function () {
 
 			var self = this;
 
+			// received data from a remote peer
 			easyrtc.setPeerListener(
 
 				function ( who, type, content, targeting ) {
 
-					self.onReceive( content );
+					self.invokeReceiveListeners( content );
 
 				}
 
 			);
 
+			// peer joined the room
 			easyrtc.setRoomOccupantListener(
 
 				function ( name, occupants, primary ) {
 
 					if ( name !== self.roomId ) return;
+
+					// It seems like occupants includes all peers list in the room.
+					// Then makes new connections with peers which aren't in self.connections,
+					// and disconnects from peers which are in self.connections but not in occupants.
 
 					var table = {};
 
@@ -63,6 +83,8 @@
 
 						if ( table[ key ] === undefined ) {
 
+							// a peer newly joined the room
+
 							self.connected( occupants[ key ].easyrtcid, ! self.connecting );
 
 						} else {
@@ -79,7 +101,13 @@
 
 						var key = keys[ i ];
 
-						if ( table[ key ] === false ) self.disconnected( key );
+						if ( table[ key ] === false ) {
+
+							// a peer left the room
+
+							self.disconnected( key );
+
+						}
 
 					}
 
@@ -89,19 +117,18 @@
 
 			);
 
+			// connects server
 			easyrtc.connect( this.appName,
 
 				function ( id ) {
 
-					self.id = id;
-
-					self.onOpen( id );
+					self.invokeOpenListeners( id );
 
 				},
 
 				function ( code, message ) {
 
-					self.onError( code + ': ' + message );
+					self.invokeErrorListeners( code + ': ' + message );
 
 				}
 
@@ -109,17 +136,36 @@
 
 		},
 
+		/**
+		 * Adds connection.
+		 * @param {string} id - remote peer id
+		 * @param {boolean} fromRemote - if remote peer starts connection process
+		 */
 		connected: function ( id, fromRemote ) {
 
-			if ( this.addConnection( id, { peer: id } ) ) this.onConnect( id, fromRemote );
+			if ( this.addConnection( id, { peer: id } ) ) {
+
+				this.invokeConnectListeners( id, fromRemote );
+
+			}
 
 		},
 
+		/**
+		 * Removes connection.
+		 * @param {string} id - remote peer id
+		 */
 		disconnected: function ( id ) {
 
-			if ( this.removeConnection( id ) ) this.onDisconnect( id );
+			if ( this.removeConnection( id ) ) {
+
+				this.invokeDisconnectListeners( id );
+
+			}
 
 		},
+
+		// public concrete method
 
 		connect: function ( id ) {
 
@@ -129,13 +175,11 @@
 
 			easyrtc.joinRoom( id, null,
 
-				function ( roomName ) {
-
-				},
+				function ( roomName ) {},
 
 				function ( code, text, roomName ) {
 
-					self.onError( roomName + ' ' + code + ': ' + text );
+					self.invokeErrorListeners( roomName + ' ' + code + ': ' + text );
 
 				}
 
@@ -161,5 +205,7 @@
 		}
 
 	} );
+
+	var MESSAGE_TYPE = 'message';
 
 } )();
