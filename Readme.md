@@ -30,7 +30,7 @@ Import js/networks/RemoteSync.js and client(s) you want to use.
 
 <script src="js/networks/RemoteSync.js"></script>
 <script src="js/networks/FirebaseSignalingServer.js"></script>
-<script src="js/controls/WebRTCClient.js"></script>
+<script src="js/networks/WebRTCClient.js"></script>
 
 var remoteSync, localId;
 
@@ -92,13 +92,13 @@ function render() {
 The easiest way is to use [PeerServer Cloud service](http://peerjs.com/peerserver) of PeerJS.
 
 1. Go to [PeerServer Cloud service](http://peerjs.com/peerserver)
-2. Get API
-3. Pass the API to PeerJSClient.
+2. Get API key
+3. Pass the API key to PeerJSClient.
 
 ```javascript
 <script src="https://rawgit.com/mrdoob/three.js/r85/build/three.js"></script>
 <script src="js/networks/RemoteSync.js"></script>
-<script src="js/controls/PeerJSClient.js"></script>
+<script src="js/networks/PeerJSClient.js"></script>
 
 remoteSync = new THREE.RemoteSync(
   new THREE.PeerJSClient( {
@@ -115,7 +115,7 @@ Note that PeerServer Cloud service has limitation.
 Then you need to pass a remote peer's id you wanna connect to .connect(). (So, maybe the remote peer needs to share its id with you beforehand.)
 
 ```javascript
-remoteSystem.connect( 'remote-peer-id' );
+remoteSync.connect( 'remote-peer-id' );
 ```
 If you wanna avoid these limitation, you need to run your own PeerServer.
 
@@ -128,7 +128,7 @@ If you wanna avoid these limitation, you need to run your own PeerServer.
 ```javascript
 <script src="https://rawgit.com/mrdoob/three.js/r85/build/three.js"></script>
 <script src="js/networks/RemoteSync.js"></script>
-<script src="js/controls/PeerJSClient.js"></script>
+<script src="js/networks/PeerJSClient.js"></script>
 
 remoteSync = new THREE.RemoteSync(
   new THREE.PeerJSClient( {
@@ -143,20 +143,70 @@ remoteSync = new THREE.RemoteSync(
 PeerJSClient acts as there's one room in the server then you don't need to pass id to .connect().
 
 ```javascript
-remoteSystem.connect( '' );
+remoteSync.connect( '' );
 ```
 
 ### Firebase
 
-T.B.D.
+Using Firebase is another easiest way. You can sync object via Realtime Database of Firebase. This isn't WebRTC approach then you can't transfer media streaming and latency would be higher than WebRTC. But perhaps you can sync with more many peers with good performance.
 
-1. Firebase console
-2. Setup Open realtime database
-3. Setup Authorize
+1. Go to [Firebase console](https://console.firebase.google.com/)
+2. Open project
+3. Setup Authentication and Realtime Database security rule
+4. Pass Authentication type, your apikey, authDomain, databaseURL to FirebaseClient
+
+```javascript
+<script src="https://rawgit.com/mrdoob/three.js/r85/build/three.js"></script>
+<script src="js/networks/RemoteSync.js"></script>
+<script src="js/networks/FirebaseClient.js"></script>
+
+remoteSync = new THREE.RemoteSync(
+  new THREE.FirebaseClient( {
+    authType: 'none',  // currently only 'none' or 'anonymous'
+    apiKey: 'your-apikey',
+    authDomain: 'your-project-id.firebaseapp.com',
+    databaseURL: 'https://your-project-id.firebaseio.com'
+  } )
+);
+```
+
+FirebaseClient supports room system, then pass roomId to .connect() to join.
+
+```javascript
+remoteSync.connect( 'roomId' );
+```
 
 ### Firebase + WebRTC
 
-T.B.D.
+You can also use Firebase as signaling server and connect remote peers with WebRTC.
+
+1. Setup Firebase project (See above)
+2. Pass Authentication type, your apikey, authDomain, databaseURL to FirebaseSignalingServer
+3. Pass FirebaseSignalingServer instance to WebRTCClient 
+
+```javascript
+<script src="https://rawgit.com/mrdoob/three.js/r85/build/three.js"></script>
+<script src="js/networks/RemoteSync.js"></script>
+<script src="js/networks/FirebaseSignalingServer.js"></script>
+<script src="js/networks/WebRTCClient.js"></script>
+
+remoteSync = new THREE.RemoteSync(
+  new THREE.WebRTCClient(
+    new THREE.FirebaseSignalingServer( {
+      authType: 'none',  // currently only 'none' or 'anonymous'
+      apiKey: 'your-apikey',
+      authDomain: 'your-project-id.firebaseapp.com',
+      databaseURL: 'https://your-project-id.firebaseio.com'
+    } )
+  )
+);
+```
+
+FirebaseSignalingServer+WebRTCClient supports room system, then pass roomId to .connect() to join.
+
+```javascript
+remoteSync.connect( 'roomId' );
+```
 
 ### EasyRTC
 
