@@ -65,18 +65,18 @@
 		/**
 		 * Adds EventListener. Callback function will be invoked when
 		 * 'open': a connection is established with a signaling server
-		 * 'close': a connection is disconnected with a signaling server
+		 * 'close': a connection is disconnected from a signaling server
 		 * 'error': network related error occurs
-		 * 'connect': a connection is established with a remote
-		 * 'disconnect': a connection is disconnected with a remote
-		 * 'receive': receives remote data sent by .sync()
+		 * 'connect': a connection is established with a remote peer
+		 * 'disconnect': a connection is disconnected from a remote peer
+		 * 'receive': receives remote data sent from a remote peer
 		 * 'add': receives an remote object info registered by .addLocalObject()
 		 * 'remove': receives an remote object removed by .removeLocalObject()
 		 * 'remote_stream': receives a remote media stream
 		 * 'receive_user_data': receives user-data from remote sent by
 		 *                      .sendUserData() or .broadUserData()
 		 *
-		 * Arugments for callback functions are
+		 * Arguments for callback functions are
 		 * 'open': {string} local peer id
 		 * 'close': {string} local peer id
 		 * 'error': {string} error message
@@ -455,7 +455,7 @@
 
 			);
 
-			this.client.addEventListener( 'remotestream',
+			this.client.addEventListener( 'remote_stream',
 
 				function ( stream ) {
 
@@ -819,6 +819,8 @@
 
 	} );
 
+	// transfer component
+
 	var TRANSFER_TYPE_SYNC = 0;
 	var TRANSFER_TYPE_ADD = 1;
 	var TRANSFER_TYPE_REMOVE = 2;
@@ -871,13 +873,20 @@
 	 */
 	function createTransferComponent( object ) {
 
+		var matrix = [];
 		var morphTargetInfluences = [];
+
+		for ( var i = 0, il = object.matrix.elements.length; i < il; i ++ ) {
+
+			matrix[ i ] = ensureFloat32( object.matrix.elements[ i ] );
+
+		}
 
 		if ( object.morphTargetInfluences !== undefined ) {
 
 			for ( var i = 0, il = object.morphTargetInfluences.length; i < il; i ++ ) {
 
-				morphTargetInfluences[ i ] = object.morphTargetInfluences[ i ];
+				morphTargetInfluences[ i ] = ensureFloat32( object.morphTargetInfluences[ i ] );
 
 			}
 
@@ -885,7 +894,7 @@
 
 		return {
 			id: object.uuid,
-			matrix: [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 ],
+			matrix: matrix,
 			morphTargetInfluences: morphTargetInfluences
 		};
 
@@ -991,7 +1000,12 @@
 ( function () {
 
 	/**
-	 *
+	 * NetworkClient constructor.
+	 * NetworkClient handles network connection and data transfer.
+	 * NetworkClient is an abstract class.
+	 * Set local media streaming to params.stream if you wanna send it to remote.
+	 * Concrete class is assumed WebRTC/Firebase/WebSocket based client.
+	 * @param {object} params - instanciate parameters (optional)
 	 */
 	THREE.NetworkClient = function ( params ) {
 
@@ -1002,8 +1016,14 @@
 
 		this.roomId = '';
 
+		// connections
+		// connection is a object which has a remote peer id in .peer property.
+		// a connection per a connected remote peer.
+
 		this.connections = [];
-		this.connectionTable = {};
+		this.connectionTable = {};  // remote peer id -> connection
+
+		// event listeners
 
 		this.onOpens = [];
 		this.onCloses = [];
@@ -1019,7 +1039,7 @@
 		if ( params.onConnect !== undefined ) this.addEventListener( 'connect', params.onConnect );
 		if ( params.onDisconnect !== undefined ) this.addEventListener( 'disconnect', params.onDisconnect );
 		if ( params.onReceive !== undefined ) this.addEventListener( 'receive', params.onReceive );
-		if ( params.onRemoteStream !== undefined ) this.addEventListener( 'remotestream', params.onRemoteStream );
+		if ( params.onRemoteStream !== undefined ) this.addEventListener( 'remote_stream', params.onRemoteStream );
 
 	};
 
@@ -1027,6 +1047,29 @@
 
 		// public
 
+		/**
+		 * Adds EventListener. Callback function will be invoked when
+		 * 'open': a connection is established with a signaling server
+		 * 'close': a connection is disconnected from a signaling server
+		 * 'error': network related error occurs
+		 * 'connect': a connection is established with a remote peer
+		 * 'disconnect': a connection is disconnected from a remote peer
+		 * 'receive': receives remote data sent from a remote peer
+		 * 'remote_stream': receives a remote media stream
+		 *
+		 * Arguments for callback functions are
+		 * 'open': {string} local peer id
+		 * 'close': {string} local peer id
+		 * 'error': {string} error message
+		 * 'connect': {string} remote peer id
+		 *            {boolean} if a remote peer sends connection request
+		 * 'disconnect': {string} remote peer id
+		 * 'receive': {object} component object sent from remote peer
+		 * 'remote_stream': {MediaStream} remote media stream
+		 *
+		 * @param {string} type - event type
+		 * @param {function} func - callback function
+		 */
 		addEventListener: function ( type, func ) {
 
 			switch ( type ) {
@@ -1055,7 +1098,7 @@
 					this.onReceives.push( func );
 					break;
 
-				case 'remotestream':
+				case 'remote_stream':
 					this.onRemoteStreams.push( func );
 					break;
 
@@ -1067,18 +1110,40 @@
 
 		},
 
-		connect: function ( destId ) {},
+		/**
+		 * Joins a room or connects a remote peer, depending on class.
+		 * A child class must override this method.
+		 * @param {string} id - room id or remote peer id, depending on class.
+		 */
+		connect: function ( id ) {},
 
+		/**
+		 * Sends data to a remote peer.
+		 * @param {string} id - remote peer id
+		 * @param {anything} data
+		 */
 		send: function ( id, data ) {},
 
+		/**
+		 * Broadcasts data to all connected peers.
+		 * @param {anything} data
+		 */
 		broadcast: function ( data ) {},
 
+		/**
+		 * Checks if having a connection with a remote peer.
+		 * @param {string} id - remote peer id
+		 * @returns {boolean}
+		 */
 		hasConnection: function ( id ) {
 
 			return this.connectionTable[ id ] !== undefined;
 
 		},
 
+		/**
+		 * Returns the number of connections.
+		 */
 		connectionNum: function () {
 
 			return this.connections.length;
@@ -1087,78 +1152,12 @@
 
 		// private (protected)
 
-		onOpen: function ( id ) {
-
-			this.id = id;
-
-			for ( var i = 0, il = this.onOpens.length; i < il; i ++ ) {
-
-				this.onOpens[ i ]( id );
-
-			}
-
-		},
-
-		onClose: function ( id ) {
-
-			for ( var i = 0, il = this.onCloses.length; i < il; i ++ ) {
-
-				this.onCloses[ i ]( id );
-
-			}
-
-		},
-
-		onError: function ( error ) {
-
-			for ( var i = 0, il = this.onErrors.length; i < il; i ++ ) {
-
-				this.onErrors[ i ]( error );
-
-			}
-
-		},
-
-		onConnect: function ( id, fromRemote ) {
-
-			for ( var i = 0, il = this.onConnects.length; i < il; i ++ ) {
-
-				this.onConnects[ i ]( id, fromRemote );
-
-			}
-
-		},
-
-		onDisconnect: function ( id ) {
-
-			for ( var i = 0, il = this.onDisconnects.length; i < il; i ++ ) {
-
-				this.onDisconnects[ i ]( id );
-
-			}
-
-		},
-
-		onReceive: function ( data ) {
-
-			for ( var i = 0, il = this.onReceives.length; i < il; i ++ ) {
-
-				this.onReceives[ i ]( data );
-
-			}
-
-		},
-
-		onRemoteStream: function ( stream ) {
-
-			for ( var i = 0, il = this.onRemoteStreams.length; i < il; i ++ ) {
-
-				this.onRemoteStreams[ i ]( stream );
-
-			}
-
-		},
-
+		/**
+		 * Adds an connection object.
+		 * @param {string} id - remote peer id
+		 * @param {object} connection - an object which has remote peer id as .peer property
+		 * @returns {boolean} if succeeded
+		 */
 		addConnection: function ( id, connection ) {
 
 			if ( id === this.id || this.connectionTable[ id ] !== undefined ) return false;
@@ -1170,6 +1169,11 @@
 
 		},
 
+		/**
+		 * Removes an connection object.
+		 * @param {string} id - remote peer id
+		 * @returns {boolean} if succeeded
+		 */
 		removeConnection: function ( id ) {
 
 			if ( id === this.id || this.connectionTable[ id ] === undefined ) return false;
@@ -1197,7 +1201,227 @@
 
 			return true;
 
+		},
+
+		// event listeners, refer to .addEventListeners() comment for the arguments.
+
+		invokeOpenListeners: function ( id ) {
+
+			this.id = id;
+
+			for ( var i = 0, il = this.onOpens.length; i < il; i ++ ) {
+
+				this.onOpens[ i ]( id );
+
+			}
+
+		},
+
+		invokeCloseListeners: function ( id ) {
+
+			for ( var i = 0, il = this.onCloses.length; i < il; i ++ ) {
+
+				this.onCloses[ i ]( id );
+
+			}
+
+		},
+
+		invokeErrorListeners: function ( error ) {
+
+			for ( var i = 0, il = this.onErrors.length; i < il; i ++ ) {
+
+				this.onErrors[ i ]( error );
+
+			}
+
+		},
+
+		invokeConnectListeners: function ( id, fromRemote ) {
+
+			for ( var i = 0, il = this.onConnects.length; i < il; i ++ ) {
+
+				this.onConnects[ i ]( id, fromRemote );
+
+			}
+
+		},
+
+		invokeDisconnectListeners: function ( id ) {
+
+			for ( var i = 0, il = this.onDisconnects.length; i < il; i ++ ) {
+
+				this.onDisconnects[ i ]( id );
+
+			}
+
+		},
+
+		invokeReceiveListeners: function ( data ) {
+
+			for ( var i = 0, il = this.onReceives.length; i < il; i ++ ) {
+
+				this.onReceives[ i ]( data );
+
+			}
+
+		},
+
+		invokeRemoteStreamListeners: function ( stream ) {
+
+			for ( var i = 0, il = this.onRemoteStreams.length; i < il; i ++ ) {
+
+				this.onRemoteStreams[ i ]( stream );
+
+			}
+
 		}
+
+	} );
+
+} )();
+
+( function () {
+
+	/**
+	 * Abstract signaling server class used for WebRTC connection establishment.
+	 */
+	THREE.SignalingServer = function () {
+
+		this.id = '';  // local peer id, assigned when local peer connects the server
+		this.roomId = '';
+
+		// event listeners
+
+		this.onOpens = [];
+		this.onCloses = [];
+		this.onErrors = [];
+		this.onRemoteJoins = [];
+		this.onReceives = [];
+
+	};
+
+	Object.assign( THREE.SignalingServer.prototype, {
+
+		/**
+		 * Adds EventListener. Callback function will be invoked when
+		 * 'open': a connection is established with a signaling server
+		 * 'close': a connection is disconnected from a signaling server
+		 * 'error': error occurs
+		 * 'receive': receives signal from a remote peer via server
+		 * 'remote_join': aware of a remote peer joins the room
+		 *
+		 * Arguments for callback functions are
+		 * 'open': {string} local peer id
+		 * 'close': {string} local peer id
+		 * 'error': {string} error message
+		 * 'receive': {object} signal sent from a remote peer
+		 * 'remote_join': {string} remote peer id
+		 *                {number} timestamp when local peer joined the room
+		 *                {number} timestamp when remote peer joined the room
+		 *
+		 * @param {string} type - event type
+		 * @param {function} func - callback function
+		 */
+		addEventListener: function ( type, func ) {
+
+			switch ( type ) {
+
+				case 'open':
+					this.onOpens.push( func );
+					break;
+
+				case 'close':
+					this.onCloses.push( func );
+					break;
+
+				case 'error':
+					this.onErrors.push( func );
+					break;
+
+				case 'receive':
+					this.onReceives.push( func );
+					break;
+
+				case 'remote_join':
+					this.onRemoteJoins.push( func );
+					break;
+
+				default:
+					console.log( 'THREE.SignalingServer.addEventListener: Unknown type ' + type );
+					break;
+
+			}
+
+		},
+
+		// invoke event listeners. refer to .addEventListener() comment for arguments.
+
+		invokeOpenListeners: function ( id ) {
+
+			for ( var i = 0, il = this.onOpens.length; i < il; i ++ ) {
+
+				this.onOpens[ i ]( id );
+
+			}
+
+		},
+
+		invokeCloseListeners: function ( id ) {
+
+			for ( var i = 0, il = this.onCloses.length; i < il; i ++ ) {
+
+				this.onCloses[ i ]( id );
+
+			}
+
+		},
+
+		invokeErrorListeners: function ( error ) {
+
+			for ( var i = 0, il = this.onErrors.length; i < il; i ++ ) {
+
+				this.onErrors[ i ]( error );
+
+			}
+
+		},
+
+		invokeRemoteJoinListeners: function ( id, localTimestamp, remoteTimestamp ) {
+
+			for ( var i = 0, il = this.onRemoteJoins.length; i < il; i ++ ) {
+
+				this.onRemoteJoins[ i ]( id, localTimestamp, remoteTimestamp );
+
+			}
+
+		},
+
+		invokeReceiveListeners: function ( signal ) {
+
+			for ( var i = 0, il = this.onReceives.length; i < il; i ++ ) {
+
+				this.onReceives[ i ]( signal );
+
+			}
+
+		},
+
+		// public abstract method
+
+		/**
+		 * Joins a room.
+		 * @param {string} roomId
+		 */
+		connect: function ( roomId ) {},
+
+		/**
+		 * Sends signal.
+		 * TODO: here assumes signal is broadcasted but we should
+		 *       enable it to send signal to a peer?
+		 * @param {object} signal
+		 */
+		send: function ( signal ) {}
 
 	} );
 
