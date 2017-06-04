@@ -55,6 +55,7 @@
 		this.onRemoves = [];
 		this.onRemoteStreams = [];
 		this.onReceiveUserDatas = [];
+		this.onUpdates = {};  // object.uuid -> update callback function
 
 		this.initClientEventListener();
 
@@ -74,6 +75,7 @@
 		 * 'receive': receives remote data sent from a remote peer
 		 * 'add': receives an remote object info registered by .addLocalObject()
 		 * 'remove': receives an remote object removed by .removeLocalObject()
+		 * 'update: shared or remote object is updated by remote's .sync()
 		 * 'remote_stream': receives a remote media stream
 		 * 'receive_user_data': receives user-data from remote sent by
 		 *                      .sendUserData() or .broadUserData()
@@ -94,12 +96,29 @@
 		 * 'remote_stream': {MediaStream} remote media stream
 		 * 'receive_user_data': {anything} user-data sent from remote
 		 *
+		 * .addEventListener() requires three arguments for 'update',
+		 * two arguments for others.
+		 *
 		 * TODO: implement .removeEventListener()
 		 *
 		 * @param {string} type - event type
+		 * @param {THREE.Object3D} object - for 'update'
 		 * @param {function} func - callback function
 		 */
-		addEventListener: function ( type, func ) {
+		addEventListener: function ( type, arg1, arg2 ) {
+
+			var func, object;
+
+			if ( type === 'update' ) {
+
+				object = arg1;
+				func = arg2;
+
+			} else {
+
+				func = arg1;
+
+			}
 
 			switch ( type ) {
 
@@ -133,6 +152,12 @@
 
 				case 'remove':
 					this.onRemoves.push( func );
+					break;
+
+				case 'update':
+					// TODO: check if object is registered as shared or remote object here?
+					this.onUpdates[ object.uuid ] = func;  // overrides without any warning so far.
+					                                       // even if listener is registered.
 					break;
 
 				case 'remote_stream':
@@ -930,6 +955,12 @@
 					array2[ i ] = array[ i ];
 
 				}
+
+			}
+
+			if ( this.onUpdates[ object.uuid ] !== undefined ) {
+
+				this.onUpdates[ object.uuid ]();
 
 			}
 

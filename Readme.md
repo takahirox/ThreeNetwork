@@ -289,7 +289,7 @@ T.B.D.
 - `sync( force, onlyLocal )`: Broadcasts registered Local and Shared objects' status to remote peers. The status only of the objects which are updated since last `.sync()` for the efficient data transfer. If `force` is true, the status of all objects will be sent even if they aren't updated. If `onlyLocal` is true, the status only of Local objects will be sent.
 - `connect( id )`: Connects a room or a remote peer (depending on platform)
 - `sendUserData( remotePeerId, data )`, `broadcastUserData( data )`: Sends/Broadcasts user-data to remote peer(s). These methods invoking will be notified to Remote peers' `receive_user_data`.
-- `addEventListener`: Adds event listener.
+- `addEventListener`: Adds event listener. Requires three arguments ( `type`, `object`, `function` ) for `update`, two arguments ( `type`, `function` ) for others.
   - `open` ( peerId ): When connected with server.
   - `close` ( peerId ): When disconnected from server.
   - `error` ( errorMessage ): When error occurs.
@@ -297,6 +297,7 @@ T.B.D.
   - `disconnect` ( remotePeerId ): When disconnected from a remote peer.
   - `add` ( remotePeerId, objectUuid, info ): When a remote peer adds its local object. `.addRemoteObject()` is assumed to be called in this listener callback function.
   - `remove` ( remotePeerId, objectUuid, remoteObject ): When a remote peer removes its local object. An object automatically be removed from `RemoteSync`.
+  - `update`: When a shared or remote object is updated by remote peer's `.sync()`.
   - `receive` (data): When receives data from a remote peer.
   - `remote_stream` (stream): When receives media streaming from a remote peer.
   - `receive_user_data` (data): When received user-data from a remote peer.
