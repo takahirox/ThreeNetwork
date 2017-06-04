@@ -31,11 +31,13 @@
 		// for remote object
 
 		this.remoteObjectTable = {}; // remote peer id -> remote object.uuid -> object
+		this.remoteObjectInfos = {}; // remote peer id -> remote object.uuid -> info
 
 		// for shared object
 
 		this.sharedObjects = [];
-		this.sharedObjectTable = {};  // shared id -> object
+		this.sharedObjectTable = {};     // shared id -> object
+		this.sharedObjectRecursives = {}; // shared id -> boolean (true or undefined)
 
 		// for local and shared object
 
@@ -160,41 +162,126 @@
 		/**
 		 * Registers a local object. Local object's matrix and
 		 * morphTargetInfluences will be sent to remote by invoking .sync().
-		 * TODO: recursively registers children.
 		 * @param {THREE.Object3D} object
 		 * @param {anything} info - user-specified info representing an object, passed to remote 'add' event listener
+		 * @param {boolean} recursive - recursively registers children if true
 		 */
-		addLocalObject: function ( object, info ) {
+		addLocalObject: function ( object, info, recursive ) {
 
-			if ( this.localObjectTable[ object.uuid ] !== undefined ) return;
+			if ( this.localObjectTable[ object.uuid ] !== undefined ) {
+
+				console.warn( 'THREE.RemoteSync.addLocalObject: This object has already been registered.' );
+				return;
+
+			}
 
 			if ( info === undefined ) info = {};
 
 			this.localObjectTable[ object.uuid ] = object;
 			this.localObjects.push( object );
-
-			this.localObjectInfos[ object.uuid ] = info;
+			this.localObjectInfos[ object.uuid ] = { userInfo: info	};
 
 			this.transferComponents[ object.uuid ] = createTransferComponent( object );
+
+			if ( recursive === true ) {
+
+				var self = this;
+
+				// TODO: move out this function not to make function for
+				//       every .addLocalObject() call.
+				// TODO: optimize. maybe can replace with recursive .addLocalObject() call?
+				//
+				// Same TODOs for .addRemoteObject(), .addSharedObject(), remoteLocalObject(),
+				// .remoteRemoteObject(), and .remoteSharedObject().
+				function traverse( parent ) {
+
+					var array = [];
+
+					for ( var i = 0, il = parent.children.length; i < il; i ++ ) {
+
+						var child = parent.children[ i ];
+
+						if ( self.localObjectTable[ child.uuid ] !== undefined ) continue;
+
+						self.localObjectTable[ child.uuid ] = child;
+						self.localObjects.push( child );
+						// this info won't be sent to remote
+						self.localObjectInfos[ child.uuid ] = { child: true };
+
+						self.transferComponents[ child.uuid ] = createTransferComponent( child );
+
+						var param = {};
+						param.id = child.uuid;
+						param.children = traverse( child );
+
+						array[ i ] = param;
+
+					}
+
+					return array;
+
+				}
+
+				this.localObjectInfos[ object.uuid ].recursive = true;
+				this.localObjectInfos[ object.uuid ].children = traverse( object );
+
+			}
 
 			if ( this.client.connectionNum() > 0 ) this.broadcastAddObjectRequest( object );
 
 		},
 
 		/**
-		 * Removes a registered local object.
-		 * TODO: recursively removes children.
+		 * Removes a registered local object. If an object's children
+		 * are recursively resistered, also removes them.
 		 * @param {THREE.Object3D} object
 		 */
 		removeLocalObject: function ( object ) {
 
-			if ( this.localObjectTable[ object.uuid ] === undefined ) return;
+			if ( this.localObjectTable[ object.uuid ] === undefined ) {
+
+				console.warn( 'THREE.RemoteSync.removeLocalObject: object not found' );
+				return;
+
+			}
+
+			var info = this.localObjectInfos[ object.uuid ];
 
 			delete this.localObjectTable[ object.uuid ];
 			delete this.localObjectInfos[ object.uuid ];
 			delete this.transferComponents[ object.uuid ];
 
 			removeObjectFromArray( this.localObjects, object );
+
+			if ( info.recursive === true ) {
+
+				var self = this;
+
+				// assumes object's tree structure doesn't change since
+				// it's registered.
+				function traverse( parent ) {
+
+					for ( var i = 0, il = parent.children.length; i < il; i ++ ) {
+
+						var child = parent.children[ i ];
+
+						if ( self.localObjectTable[ child.uuid ] === undefined ) continue;
+
+						delete self.localObjectTable[ child.uuid ];
+						delete self.localObjectInfos[ child.uuid ];
+						delete self.transferComponents[ child.uuid ];
+
+						removeObjectFromArray( self.localObjects, child );
+
+						traverse( child );
+
+					}
+
+				}
+
+				traverse( object );
+
+			}
 
 			if ( this.client.connectionNum() > 0 ) this.broadcastRemoveObjectRequest( object );
 
@@ -203,21 +290,66 @@
 		/**
 		 * Registers an object whose matrix and morphTargetInfluences will be updated by
 		 * a remote object. Registered object will be automatically removed from RemoteSync
-		 * if corresponging object is removed from RemoteSync in remote.
-		 * TODO: recursively registers children.
+		 * if corresponging object is removed from RemoteSync in remote. If corresponding
+		 * object's children is recursively registered, recursively registeres children here, too.
 		 * @param {string} destId - remote peer id
 		 * @param {string} objectId - remote object uuid
 		 * @param {THREE.Object3D} object
 		 */
 		addRemoteObject: function ( destId, objectId, object ) {
 
-			if ( this.remoteObjectTable[ destId ] === undefined ) this.remoteObjectTable[ destId ] = {};
-
 			var objects = this.remoteObjectTable[ destId ];
 
-			if ( objects[ objectId ] !== undefined ) return;
+			if ( objects === undefined ) {
+
+				console.warn( 'THREE.RemoteSync.addRemoteObject: has not received any add object request from ' + destId + ' peer.' );
+				return;
+
+			}
+
+			var infos = this.remoteObjectInfos[ destId ];
+			var info = infos[ objectId ];
+
+			if ( info === undefined ) {
+
+				console.warn( 'THREE.RemoteSync.addRemoteObject: has not received ' + objectId + ' object addition request from ' + destId + ' peer.' );
+				return;
+
+			}
+
+			if ( objects[ objectId ] !== undefined ) {
+
+				console.warn( 'THREE.RemoteSync.addRemoteObject: object for ' + objectId + ' object of ' + destId + ' peer has been already registered.' );
+				return;
+
+			}
 
 			objects[ objectId ] = object;
+
+			// assumes corresponding remote's local object and this object has the same
+			// tree structure including the order of children.
+			if ( info.recursive === true ) {
+
+				function traverse( obj, param ) {
+
+					var children1 = obj.children;
+					var children2 = param.children;
+
+					for ( var i = 0, il = Math.min( children1.length, children2.length ); i < il; i ++ ) {
+
+						var child1 = children1[ i ];
+						var child2 = children2[ i ];
+
+						objects[ child2.id ] = child1;
+						traverse( child1, child2 );
+
+					}
+
+				}
+
+				traverse( object, info );
+
+			}
 
 		},
 
@@ -227,11 +359,11 @@
 		 * Shared object is associated with user-defined shared id.
 		 * It synchronizes with a remote object which has the same
 		 * shared id.
-		 * TODO: recursively registers children.
 		 * @param {THREE.Object3D} object
-		 * @param {number or string} id - shared id. 
+		 * @param {string} id - shared id.
+		 * @param {boolean} recursive - recursively adds children if true
 		 */
-		addSharedObject: function ( object, id ) {
+		addSharedObject: function ( object, id, recursive ) {
 
 			if ( this.sharedObjectTable[ id ] !== undefined ) {
 
@@ -247,21 +379,96 @@
 			component.sid = id;  // shared id, special property for shared object
 			this.transferComponents[ object.uuid ] = component;
 
+			if ( recursive === true ) {
+
+				this.sharedObjectRecursives[ id ] = true;
+
+				var self = this;
+
+				function traverse( parentId, parent ) {
+
+					var children = parent.children;
+
+					for ( var i = 0, il = children.length; i < il; i ++ ) {
+
+						var child = children[ i ];
+						// can conflict with other user-specified id?
+						var id = parentId + '__' + i;
+
+						if ( self.sharedObjectTable[ id ] !== undefined ) continue;
+
+						self.sharedObjectTable[ id ] = child;
+						self.sharedObjects.push( child );
+
+						var component = createTransferComponent( child );
+						component.sid = id;
+						self.transferComponents[ child.uuid ] = component;
+
+						traverse( id, child );
+
+					}
+
+				}
+
+				traverse( id, object );
+
+			}
+
 		},
 
 		/**
-		 * Removes a shared object.
-		 * @param {number or string} id - shared id
+		 * Removes a shared object. If object's children are recursively
+		 * registered, also removes them.
+		 * @param {string} id - shared id
 		 */
 		removeSharedObject: function ( id ) {
 
-			if ( this.sharedObjectTable[ id ] === undefined ) return;
+			if ( this.sharedObjectTable[ id ] === undefined ) {
+
+				console.warn( 'THREE.RemoteSync.removeSharedObject: no found shared id ' + id );
+				return;
+
+			}
 
 			var object = this.sharedObjectTable[ id ];
 
 			delete this.sharedObjectTable[ id ];
 
 			removeObjectFromArray( this.sharedObjects, object );
+
+			if ( this.sharedObjectRecursives[ id ] === true ) {
+
+				delete this.sharedObjectRecursives[ id ];
+
+				var self = this;
+
+				// assumes object tree structure doesn't change since
+				// it's registered as shared object.
+				function traverse( parentId, parent ) {
+
+					var children = parent.children;
+
+					for ( var i = 0, il = children.length; i < il; i ++ ) {
+
+						var id = parentId + '__' + i;
+
+						if ( self.sharedObjectTable[ id ] === undefined ) continue;
+
+						var child = self.sharedObjectTable[ id ];
+
+						delete self.sharedObjectTable[ id ];
+
+						removeObjectFromArray( self.sharedObjects, child );
+
+						traverse( id, child );
+
+					}
+
+				}
+
+				traverse( id, object );
+
+			}
 
 		},
 
@@ -519,14 +726,26 @@
 			var destId = component.id;
 			var list = component.list;
 
+			if ( this.remoteObjectTable[ destId ] === undefined ) {
+
+				this.remoteObjectTable[ destId ] = {};
+				this.remoteObjectInfos[ destId ] = {};
+
+			}
+
 			var objects = this.remoteObjectTable[ destId ];
+			var infos = this.remoteObjectInfos[ destId ];
 
 			for ( var i = 0, il = list.length; i < il; i ++ ) {
 
-				if ( objects !== undefined &&
-					objects[ list[ i ].id ] !== undefined ) continue;
+				var objectId = list[ i ].id;
+				var info = list[ i ].info;
 
-				this.invokeAddListeners( destId, list[ i ].id, list[ i ].info );
+				if ( objects[ objectId ] !== undefined ) continue;
+
+				infos[ objectId ] = info;
+
+				this.invokeAddListeners( destId, objectId, info.userInfo );
 
 			}
 
@@ -561,7 +780,8 @@
 
 		/**
 		 * Removes an object registered as a remote object.
-		 * Invokes 'remove' event listener.
+		 * Invokes 'remove' event listener. If corresponding object's children
+		 * in remote are recursively registers, also removes them.
 		 * @param {string} destId - remote peer id
 		 * @param {string} objectId - remote object uuid
 		 */
@@ -570,12 +790,40 @@
 			if ( this.remoteObjectTable[ destId ] === undefined ) return;
 
 			var objects = this.remoteObjectTable[ destId ];
+			var infos = this.remoteObjectInfos[ destId ];
 
 			if ( objects[ objectId ] === undefined ) return;
 
 			var object = objects[ objectId ];
+			var info = infos[ objectId ];
 
 			delete objects[ objectId ];
+			delete infos[ objectId ];
+
+			if ( info.recursive === true ) {
+
+				// assumes remote's local object and this object has the
+				// same tree structure including the order of children.
+				function traverse( obj, param ) {
+
+					var children1 = obj.children;
+					var children2 = param.children;
+
+					for ( var i = 0, il = Math.min( children1.length, children2.length ); i < il; i ++ ) {
+
+						var child1 = children1[ i ];
+						var child2 = children2[ i ];
+
+						delete objects[ child2.id ];
+						traverse( child1, child2 );
+
+					}
+
+				}
+
+				traverse( object, info );
+
+			}
 
 			this.invokeRemoteListeners( destId, objectId, object );
 
@@ -902,6 +1150,7 @@
 
 	/**
 	 * Builds transfer component for add objects request.
+	 * TODO: move into RemoteSync?
 	 * @param {string} sourceId - local peer id
 	 * @param {Array} objects - Array of THREE.Object3D
 	 * @param {object} infoTable
@@ -921,6 +1170,10 @@
 
 			var object = objects[ i ];
 			var info = infoTable[ object.uuid ];
+
+			// not sends this object because it'll be included in
+			// parent addition request.
+			if ( info.child === true ) continue;
 
 			list.push( { id: object.uuid, info: info } );
 

@@ -23,7 +23,7 @@ ThreeNetwork is real-time network library for Three.js. ThreeNetwork synchronize
 
 ## Sample code
 
-In your coe, import `RemoteSync`
+In your code, import `RemoteSync`
 
 - js/networks/RemoteSync.js
 
@@ -281,11 +281,11 @@ T.B.D.
 ## API
 
 `RemoteSync`
-- `addLocalObject( object, info )`: Registers a Local object. Local object's status will be sent to remote by invoking `.sync()`. Local object addition with `info` will be notified to remote peers' `add` event listener.
-- `addRemoteObject( remotePeerId, objectUuid, object )`: Registers a Remote object. Remote object's status reflect to a corresponding remote peer's local object. This metho is assumed to be called in `add` event listener callback function.
-- `addSharedObject( object, sharedId )`: Registers a Shared object. Shared object's status will be sent to remote by invokind `.sync()` and aldo reglect corresponding remote peers' Shared object. Shared object will bind with remote peers' shared object assigned the same shared id.
-- `removeLocalObject( object )`: Removes a Local object from `RemoteSync`.
-- `removeSharedObject( sharedId )`: Unbinds Shared object.
+- `addLocalObject( object, info, recursive )`: Registers a Local object. Local object's status will be sent to remote by invoking `.sync()`. Local object addition with `info` will be notified to remote peers' `add` event listener. If recursive is true, recursively registers object's children.
+- `addRemoteObject( remotePeerId, objectUuid, object )`: Registers a Remote object. Remote object's status reflect to a corresponding remote peer's local object. This method is assumed to be called in `add` event listener callback function. If a correnponding object's children in remote are recursively registered, registers recursively its children here too. In that case, assumes the same object tree structure between local and remote.
+- `addSharedObject( object, sharedId, recursive )`: Registers a Shared object. Shared object's status will be sent to remote by invokind `.sync()` and aldo reglect corresponding remote peers' Shared object. Shared object will bind with remote peers' shared object assigned the same shared id. If recursive is true, recursively registers object's children.
+- `removeLocalObject( object )`: Removes a Local object from `RemoteSync`. If it's children are recursively registered, also removes them. In that case, assumes object tree structure doesn't change since it's registered.
+- `removeSharedObject( sharedId )`: Unbinds Shared object. If it's children are recursively registered, also removes them. In that case, assumes object tree structure doesn't change since it's registered.
 - `sync( force, onlyLocal )`: Broadcasts registered Local and Shared objects' status to remote peers. The status only of the objects which are updated since last `.sync()` for the efficient data transfer. If `force` is true, the status of all objects will be sent even if they aren't updated. If `onlyLocal` is true, the status only of Local objects will be sent.
 - `connect( id )`: Connects a room or a remote peer (depending on platform)
 - `sendUserData( remotePeerId, data )`, `broadcastUserData( data )`: Sends/Broadcasts user-data to remote peer(s). These methods invoking will be notified to Remote peers' `receive_user_data`.

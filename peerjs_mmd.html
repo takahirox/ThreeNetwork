@@ -316,13 +316,7 @@
 					mesh.position.y = -10;
 					scene.add( mesh );
 
-					var sid = 0;
-
-					mesh.traverse( function ( obj ) {
-
-						remoteSync.addSharedObject( obj, sid++ );
-
-					} );
+					remoteSync.addSharedObject( mesh, 'shared', true );
 
 					initGui( mesh );
 
