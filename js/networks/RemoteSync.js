@@ -94,6 +94,8 @@
 		 * 'remote_stream': {MediaStream} remote media stream
 		 * 'receive_user_data': {anything} user-data sent from remote
 		 *
+		 * TODO: implement .removeEventListener()
+		 *
 		 * @param {string} type - event type
 		 * @param {function} func - callback function
 		 */
