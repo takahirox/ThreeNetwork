@@ -205,7 +205,7 @@
 
 						self.localObjectTable[ child.uuid ] = child;
 						self.localObjects.push( child );
-						// this info won't be sent to remote
+						// child: true indicates this object is registered as child of another object
 						self.localObjectInfos[ child.uuid ] = { child: true };
 
 						self.transferComponents[ child.uuid ] = createTransferComponent( child );
@@ -340,7 +340,11 @@
 						var child1 = children1[ i ];
 						var child2 = children2[ i ];
 
+						if ( objects[ child2.id ] !== undefined ) continue;
+
 						objects[ child2.id ] = child1;
+						infos[ child2.id ] = { child: true };
+
 						traverse( child1, child2 );
 
 					}
