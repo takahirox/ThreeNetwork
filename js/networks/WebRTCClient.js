@@ -218,6 +218,8 @@
 		this.server = server;
 		this.pc = this.createPeerConnection( stream );
 
+		this.open = false;
+
 		// event listeners
 
 		this.onOpens = [];
@@ -325,6 +327,20 @@
 			pc.onaddstream = function ( event ) {
 
 				self.invokeReceiveStreamListeners( event.stream );
+
+			};
+
+			// Note: seems like channel.onclose hander is unreliable on some platforms,
+			//       so also try to detect disconnection here.
+			pc.oniceconnectionstatechange = function() {
+
+				if( self.open && pc.iceConnectionState == 'disconnected' ) {
+
+					self.open = false;
+
+					self.invokeCloseListeners( self.peer );
+
+				}
 
 			};
 
@@ -484,12 +500,18 @@
 			// connected with a remote peer
 			this.channel.onopen = function ( event ) {
 
+				self.open = true;
+
 				self.invokeOpenListeners( self.peer );
 
 			};
 
 			// disconnected from a remote peer
 			this.channel.onclose = function ( event ) {
+
+				if ( ! self.open ) return;
+
+				self.open = false;
 
 				self.invokeCloseListeners( self.peer );
 
