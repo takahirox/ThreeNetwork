@@ -293,7 +293,7 @@ T.B.D.
   - `open` ( peerId ): When connected with server.
   - `close` ( peerId ): When disconnected from server.
   - `error` ( errorMessage ): When error occurs.
-  - `connect` ( remotePeerId ): When connected with a remote peer.
+  - `connect` ( remotePeerId, fromPeer ): When connected with a remote peer. `fromPeer` is a flag indicating if a remote peer sends connection request.
   - `disconnect` ( remotePeerId ): When disconnected from a remote peer.
   - `add` ( remotePeerId, objectUuid, info ): When a remote peer adds its local object. `.addRemoteObject()` is assumed to be called in this listener callback function.
   - `remove` ( remotePeerId, objectUuid, remoteObject ): When a remote peer removes its local object. An object automatically be removed from `RemoteSync`.

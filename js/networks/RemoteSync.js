@@ -85,6 +85,7 @@
 		 * 'close': {string} local peer id
 		 * 'error': {string} error message
 		 * 'connect': {string} remote peer id
+		 *            {boolean} if a remote peer sends connection request
 		 * 'disconnect': {string} remote peer id
 		 * 'receive': {object} component object sent from remote peer
 		 * 'add': {string} remote peer id
@@ -615,7 +616,7 @@
 
 				function ( id, fromRemote ) {
 
-					self.invokeConnectListeners( id );
+					self.invokeConnectListeners( id, fromRemote );
 
 					// send already registered local objects info
 					// to newly connected remote
@@ -1032,11 +1033,11 @@
 
 		},
 
-		invokeConnectListeners: function ( id ) {
+		invokeConnectListeners: function ( id, fromRemote ) {
 
 			for ( var i = 0, il = this.onConnects.length; i < il; i ++ ) {
 
-				this.onConnects[ i ]( id );
+				this.onConnects[ i ]( id, fromRemote );
 
 			}
 
