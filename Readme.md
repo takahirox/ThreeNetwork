@@ -4,6 +4,7 @@ ThreeNetwork is real-time network library for Three.js. ThreeNetwork synchronize
 
 ![video](images/screenshot.gif)
 ![video2](images/screenshot2.gif)
+![video3](images/screenshot3.gif)
 
 ## Demo
 
