@@ -217,6 +217,7 @@
 		this.peer = peer;
 		this.server = server;
 		this.pc = this.createPeerConnection( stream );
+		this.channel = null;
 
 		this.open = false;
 
@@ -615,6 +616,9 @@
 		 * @param {anything} data
 		 */
 		send: function ( data ) {
+
+			// TODO: throw error?
+			if ( this.channel === null || this.channel.readyState !== 'open' ) return;
 
 			this.channel.send( JSON.stringify( data ) );
 
