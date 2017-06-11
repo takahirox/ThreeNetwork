@@ -2,9 +2,9 @@
 
 ThreeNetwork is real-time network library for Three.js. ThreeNetwork synchronizes Three.js objects with remote. It supports [PeerJS](http://peerjs.com/), [EasyRTC](https://easyrtc.com/), and [Firebase](https://firebase.google.com/)
 
-![video](images/screenshot.gif)
-![video2](images/screenshot2.gif)
-![video3](images/screenshot3.gif)
+![video](https://github.com/takahirox/assets/blob/master/ThreeNetwork/screenshot.gif)
+![video2](https://github.com/takahirox/assets/blob/master/ThreeNetwork/screenshot2.gif)
+![video3](https://github.com/takahirox/assets/blob/master/ThreeNetwork/screenshot3.gif)
 
 ## Demo
 
