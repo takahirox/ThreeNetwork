@@ -12,6 +12,7 @@ ThreeNetwork is real-time network library for Three.js. ThreeNetwork synchronize
 - EasyRTC
 - [Firebase](http://takahirox.github.io/ThreeNetworkDemo/firebase.html)
 - [Firebase+WebRTC](http://takahirox.github.io/ThreeNetworkDemo/firebase2.html)
+- [Firebase+WebRTC+Physics](http://takahirox.github.io/ThreeNetworkDemo/firebase2_physics.html)
 
 ## Features
 
