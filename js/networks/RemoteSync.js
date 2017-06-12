@@ -20,7 +20,7 @@
 	THREE.RemoteSync = function ( client ) {
 
 		this.client = client;
-		this.id = client.id;
+		this.id = '';
 
 		// for local object
 
@@ -57,7 +57,38 @@
 		this.onReceiveUserDatas = [];
 		this.onUpdates = {};  // object.uuid -> update callback function
 
+		// experiment, master
+
+		this.master = false;
+		this.masterPeer = this.id;
+
+		this.onMasters = [];
+		this.onSlaves = [];
+		this.onMasterNotifications = [];
+
+		//
+
 		this.initClientEventListener();
+
+		// if client is already opened
+
+		if ( this.client.id !== '' ) {
+
+			var self = this;
+
+			requestAnimationFrame(
+
+				function () {
+
+					self.id = self.client.id;
+					self.invokeOpenListeners( self.id );
+					self.beMaster();
+
+				}
+
+			);
+
+		}
 
 	};
 
@@ -79,6 +110,9 @@
 		 * 'remote_stream': receives a remote media stream
 		 * 'receive_user_data': receives user-data from remote sent by
 		 *                      .sendUserData() or .broadUserData()
+		 * 'master': being a master peer from a slave peer (experiment)
+		 * 'slave': being a slave peer from a master (experiment)
+		 * 'master_notification': being notified a master peer (experiment)
 		 *
 		 * Arguments for callback functions are
 		 * 'open': {string} local peer id
@@ -96,6 +130,7 @@
 		 *           {string} removed object, registered as remote object
 		 * 'remote_stream': {MediaStream} remote media stream
 		 * 'receive_user_data': {anything} user-data sent from remote
+		 * 'master_notification': {string} master peer id
 		 *
 		 * .addEventListener() requires three arguments for 'update',
 		 * two arguments for others.
@@ -167,6 +202,18 @@
 
 				case 'receive_user_data':
 					this.onReceiveUserDatas.push( func );
+					break;
+
+				case 'master':
+					this.onMasters.push( func );
+					break;
+
+				case 'slave':
+					this.onSlaves.push( func );
+					break;
+
+				case 'master_notification':
+					this.onMasterNotifications.push( func );
 					break;
 
 				default:
@@ -587,6 +634,7 @@
 
 					self.id = id;
 					self.invokeOpenListeners( id );
+					self.beMaster();
 
 				}
 
@@ -618,6 +666,10 @@
 
 					self.invokeConnectListeners( id, fromRemote );
 
+					if ( ! fromRemote && self.isMaster() ) self.beSlave();
+
+					if ( self.isMaster() ) self.sendMasterPeerId( id );
+
 					// send already registered local objects info
 					// to newly connected remote
 					self.sendAddObjectsRequest( id );
@@ -630,8 +682,6 @@
 			this.client.addEventListener( 'disconnect',
 
 				function ( id ) {
-
-					self.invokeDisconnectListeners( id );
 
 					// removes objects registered as remote object
 					// of disconnected peer
@@ -649,6 +699,10 @@
 					}
 
 					delete self.remoteObjectTable[ id ];
+
+					self.invokeDisconnectListeners( id );
+
+					if ( self.masterPeer === id ) self.electNewMaster();
 
 				}
 
@@ -680,6 +734,10 @@
 
 						case TRANSFER_TYPE_USER_DATA:
 							self.invokeReceiveUserDataListeners( component );
+							break;
+
+						case TRANSFER_TYPE_MASTER_NOTIFY:
+							self.handleMasterNotification( component );
 							break;
 
 						default:
@@ -1101,6 +1159,168 @@
 
 			}
 
+		},
+
+		// experiment, master
+
+		/**
+		 * Note: RemoteSync automaticallly chooses one peer as a master peer in the room.
+		 *       Application will be notified when local peer becomes a master/non-master(slave)
+		 *       via 'master'/'slave' event listener.
+		 *       Application can uses this master functionality if it wants only one peer
+		 *       in the room to do something.
+		 *       This feature is very experiment now. The current logic isn't robust.
+		 */
+
+		// private
+
+		/**
+		 * Returns the flag indicating if I'm a master peer.
+		 * @return {boolean}
+		 */
+		isMaster: function () {
+
+			return this.master;
+
+		},
+
+		/**
+		 * Lets myself be a master peer.
+		 */
+		beMaster: function () {
+
+			if ( ! this.isMaster() ) {
+
+				this.master = true;
+				this.masterPeer = this.id;
+				this.notifyBeingMaster();
+				this.invokeMasterListeners();
+
+			}
+
+		},
+
+		/**
+		 * Lets myself be a slave peer.
+		 */
+		beSlave: function () {
+
+			if ( this.isMaster() ) {
+
+				this.master = false;
+				this.invokeSlaveListeners();
+
+			}
+
+		},
+
+		/**
+		 * Notifies that I become a master peer to other peers.
+		 */
+		notifyBeingMaster: function () {
+
+			var component = buildMasterNotificationComponent( this.id, this.masterPeer );
+			component.did = null;
+			this.client.broadcast( component );
+
+		},
+
+		/**
+		 * Sends a master peer's id to a remote peer.
+		 * @params {string} destId - remote peer id
+		 */
+		sendMasterPeerId: function ( destId ) {
+
+			var component = buildMasterNotificationComponent( this.id, this.masterPeer );
+			component.did = destId;
+			this.client.send( destId, component );
+
+		},
+
+		/**
+		 * Handles master notification sent from a remote peer.
+		 * @params {object} component - data sent from a remote peer
+		 */
+		handleMasterNotification: function ( component ) {
+
+			var newMasterPeer = component.list[ 0 ];
+
+			if ( newMasterPeer === this.id && ! this.isMaster() ) {
+
+				this.beMaster();
+
+			} else if ( newMasterPeer !== this.id && this.isMaster() ) {
+
+				this.beSlave();
+
+			}
+
+			if ( newMasterPeer !== this.masterPeer ) {
+
+				this.masterPeer = newMasterPeer;
+
+				this.invokeMasterNotificationListeners( newMasterPeer );
+
+			}
+
+		},
+
+		/**
+		 * Elects a new master peer.
+		 * Assumes this's called when a master peer leaves the room.
+		 */
+		electNewMaster: function () {
+
+			// TODO: I don't wanna touch connections out of NetworkClient.
+			var connections = this.client.connections;
+
+			// Chooses the first peer ordered by peer id as a master peer so far.
+			// This logic is very temporal.
+
+			var array = [ this.id ];
+
+			for ( var i = 0, il = connections.length; i < il; i ++ ) {
+
+				array.push( connections[ i ].peer );
+
+			}
+
+			if ( array.sort()[ 0 ] === this.id ) {
+
+				this.beMaster();
+
+			}
+
+		},
+
+		invokeMasterListeners: function () {
+
+			for ( var i = 0, il = this.onMasters.length; i < il; i ++ ) {
+
+				this.onMasters[ i ]();
+
+			}
+
+		},
+
+		invokeSlaveListeners: function () {
+
+			for ( var i = 0, il = this.onSlaves.length; i < il; i ++ ) {
+
+				this.onSlaves[ i ]();
+
+			}
+
+		},
+
+		invokeMasterNotificationListeners: function ( masterPeer ) {
+
+			for ( var i = 0, il = this.onMasterNotifications.length; i < il; i ++ ) {
+
+				this.onMasterNotifications[ i ]( masterPeer );
+
+			}
+
 		}
 
 	} );
@@ -1111,6 +1331,7 @@
 	var TRANSFER_TYPE_ADD = 1;
 	var TRANSFER_TYPE_REMOVE = 2;
 	var TRANSFER_TYPE_USER_DATA = 3;
+	var TRANSFER_TYPE_MASTER_NOTIFY = 4;
 
 	var TRANSFER_COMPONENT = {
 		id: null,   // source id
@@ -1281,6 +1502,26 @@
 		var list = component.list;
 		list.length = 0;
 		list.push( data );
+
+		return component;
+
+	}
+
+	/**
+	 * Builds transfer component for master peer notification.
+	 * @param {string} sourceId - local peer id
+	 * @param {string} masterPeer - master peer's id
+	 * @returns {object} transfer component
+	 */
+	function buildMasterNotificationComponent( sourceId, masterPeer ) {
+
+		var component = TRANSFER_COMPONENT;
+		component.id = sourceId;
+		component.type = TRANSFER_TYPE_MASTER_NOTIFY;
+
+		var list = component.list;
+		list.length = 0;
+		list.push( masterPeer );
 
 		return component;
 

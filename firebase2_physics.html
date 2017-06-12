@@ -45,7 +45,6 @@
 		<script src="js/controls/FPControls.js"></script>
 
 		<script src="https://rawgit.com/mrdoob/three.js/r85/examples/js/effects/OutlineEffect.js"></script>
-		<script src="https://rawgit.com/mrdoob/three.js/r85/examples/js/controls/TransformControls.js"></script>
 		<script src="https://rawgit.com/mrdoob/three.js/r85/examples/js/Detector.js"></script>
 		<script src="https://rawgit.com/mrdoob/three.js/r85/examples/js/libs/stats.min.js"></script>
 
@@ -73,6 +72,7 @@
 
 				this.threeVector3s = [];
 				this.threeQuaternions = [];
+				this.threeMatrix4s = [];
 
 				this.world = this.createWorld();
 
@@ -151,6 +151,18 @@
 				freeThreeQuaternion: function( q ) {
 
 					this.threeQuaternions.push( q );
+
+				},
+
+				allocThreeMatrix4: function () {
+
+					return this.threeMatrix4s.length > 0 ? this.threeMatrix4s.pop() : new THREE.Matrix4();
+
+				},
+
+				freeThreeMatrix4: function ( m ) {
+
+					this.threeMatrix4s.push( m );
 
 				},
 
@@ -373,17 +385,31 @@
 
 						var origin = form.getOrigin();
 						form.getBasis().getRotation( quaternion );
-						object.position.set(
+
+						var threePosition = this.allocThreeVector3();
+						var threeQuaternion = this.allocThreeQuaternion();
+
+						threePosition.set(
 							origin.x(),
 							origin.y(),
 							origin.z()
 						);
-						object.quaternion.set(
+
+						threeQuaternion.set(
 							quaternion.x(),
 							quaternion.y(),
 							quaternion.z(),
 							quaternion.w()
 						);
+
+						if ( object.parent !== null ) {
+
+							// TODO: transform position and quaternion to object local world.
+
+						}
+
+						object.position.copy( threePosition );
+						object.quaternion.copy( threeQuaternion );
 
 						this.freeTransform( form );
 						this.freeQuaternion( quaternion );
@@ -434,9 +460,8 @@
 			var container, stats;
 
 			var clientId;
-			var masterId;
 
-			var camera, scene, renderer, effect, controls, transformControls;
+			var camera, scene, renderer, effect, controls;
 			var remoteSync;
 
 			var localBoxes = [];
@@ -445,8 +470,6 @@
 
 			var clock = new THREE.Clock();
 			var physics = new Physics();
-
-			var master = true;
 
 			navigator.getUserMedia = navigator.getUserMedia ||
 							navigator.webkitGetUserMedia ||
@@ -503,10 +526,11 @@
 				remoteSync.addEventListener( 'connect', onConnect );
 				remoteSync.addEventListener( 'disconnect', onDisconnect );
 				remoteSync.addEventListener( 'receive', onReceive );
-				remoteSync.addEventListener( 'receive_user_data', onReceiveUserData );
 				remoteSync.addEventListener( 'add', onAdd );
 				remoteSync.addEventListener( 'remove', onRemove );
 				remoteSync.addEventListener( 'remote_stream', onRemoteStream );
+				remoteSync.addEventListener( 'master', onMaster );
+				remoteSync.addEventListener( 'slave', onSlave );
 
 				container = document.createElement( 'div' );
 				document.body.appendChild( container );
@@ -564,10 +588,6 @@
 				// controls
 
 				controls = new THREE.FPControls( camera, renderer.domElement );
-
-				transformControls = new THREE.TransformControls( camera, renderer.domElement );
-				transformControls.addEventListener( 'change', render );
-				transformControls.setMode( 'translate' );
 
 				window.addEventListener( 'resize', onWindowResize, false );
 
@@ -715,7 +735,6 @@
 			function update() {
 
 				controls.update();
-				transformControls.update();
 
 				physics.simulate( clock.getDelta() );
 
@@ -726,6 +745,37 @@
 			function render() {
 
 				effect.render( scene, camera );
+
+			}
+
+			function addBoxPhysics( box, type ) {
+
+				var parameters = box.geometry.parameters;
+				var width = parameters.width;
+				var height = parameters.height;
+				var depth = parameters.depth;
+
+				physics.add( box, {
+					type: type,
+					shapeType: 'box',
+					width: width / 2.0,
+					height: height / 2.0,
+					depth: depth / 2.0,
+					weight: 5.0,
+					friction: 1.0
+				} );
+
+			}
+
+			function addSpherePhysics( sphere, type ) {
+
+				physics.add( sphere, {
+					type: type,
+					shapeType: 'sphere',
+					width: sphere.geometry.parameters.radius,
+					weight: 1.0,
+					friction: 1.0
+				} );
 
 			}
 
@@ -771,15 +821,7 @@
 
 					scene.add( box );
 
-					physics.add( box, {
-						type: 'dynamic',
-						shapeType: 'box',
-						width: width / 2.0,
-						height: height / 2.0,
-						depth: depth / 2.0,
-						weight: 5.0,
-						friction: 1.0
-					} );
+					addBoxPhysics( box, 'dynamic' );
 
 					remoteSync.addLocalObject( box, { type: 'box' } );
 
@@ -796,10 +838,6 @@
 				remoteSync.addSharedObject( sphere, sid );
 
 				sharedSphere = sphere;
-
-				beMaster( true );
-
-				scene.add( transformControls );
 
 				connectFromURL();
 
@@ -818,33 +856,13 @@
 					case 'camera':
 						mesh = createModel( destId );
 						scene.add( mesh );
-						physics.add( mesh, {
-							type: 'static',
-							shapeType: 'sphere',
-							width: mesh.geometry.parameters.radius,
-							weight: 0.1
-						} );
+						addSpherePhysics( mesh, 'static' );
 						break;
 
 					case 'box':
 						mesh = createBox( 'remote' );
 						scene.add( mesh );
-
-						var parameters = mesh.geometry.parameters;
-						var width = parameters.width;
-						var height = parameters.height;
-						var depth = parameters.depth;
-
-						physics.add( mesh, {
-							type: 'static',
-							shapeType: 'box',
-							width: width / 2.0,
-							height: height / 2.0,
-							depth: depth / 2.0,
-							weight: 5.0,
-							friction: 1.0
-						} );
-
+						addBoxPhysics( mesh, 'static' );
 						break;
 
 					default:
@@ -904,10 +922,6 @@
 
 			function onConnect( destId, fromRemote ) {
 
-				if ( ! fromRemote ) beSlave();
-
-				if ( master ) notifyMaster();
-
 				showMessage( 'Connected with ' + destId );
 
 			}
@@ -915,40 +929,6 @@
 			function onDisconnect( destId, object ) {
 
 				showMessage( 'Disconnected with ' + destId );
-
-				if ( remoteSync.client.connectionNum() === 0 ) {
-
-					beMaster();
-
-				} else if ( destId === masterId ) {
-
-					/**
-					 * If master client leaves the room
-					 * we need to choose a new master client.
-					 * This choice logic is very easy but not perfect
-					 * (assuming network works very ideally) so very temporal.
-					 */
-
-					// TODO: I don't want end users to touch .connections...
-					var connections = remoteSync.client.connections;
-
-					var array = [ clientId ];
-
-					for ( var i = 0, il = connections.length; i < il; i ++ ) {
-
-						array.push( connections[ i ].peer );
-
-					}
-
-					// chooses the first client ordered by the id as master 
-
-					if ( array.sort()[ 0 ] === clientId ) {
-
-						beMaster();
-
-					}
-
-				}
 
 			}
 
@@ -1005,95 +985,27 @@
 
 			}
 
-			/**
-			 * Note: Each client calculates Physics for its local objects and
-			 *       broadcast the result. 
-			 *       One of the clients in the room will be a master client.
-			 *       Master client calculates Physics for shared objects and
-			 *       broadcasts the result. When master client leaves the room
-			 *       another client will be master.
-			 */
-			function beMaster( force ) {
+			function onMaster() {
 
-				if ( force === true || ! master ) {
+				for ( var i = 0, il = sharedBoxes.length; i < il; i ++ ) {
 
-					master = true;
-
-					for ( var i = 0, il = sharedBoxes.length; i < il; i ++ ) {
-
-						var box = sharedBoxes[ i ];
-
-						var parameters = box.geometry.parameters;
-						var width = parameters.width;
-						var height = parameters.height;
-						var depth = parameters.depth;
-
-						physics.add( box, {
-							type: 'dynamic',
-							shapeType: 'box',
-							width: width / 2.0,
-							height: height / 2.0,
-							depth: depth / 2.0,
-							weight: 5.0,
-							friction: 1.0
-						} );
-
-					}
-
-					var sphere = sharedSphere;
-
-					physics.add( sphere, {
-						type: 'dynamic',
-						shapeType: 'sphere',
-						width: sphere.geometry.parameters.radius,
-						weight: 1.0,
-						friction: 1.0
-					} );
-
-					masterId = clientId;
-
-					notifyMaster();
+					addBoxPhysics( sharedBoxes[ i ], 'dynamic' );
 
 				}
 
+				addSpherePhysics( sharedSphere, 'dynamic' );
+
 			}
 
-			function beSlave( force ) {
+			function onSlave( masterPeer ) {
 
-				if ( force === true || master ) {
+				for ( var i = 0, il = sharedBoxes.length; i < il; i ++ ) {
 
-					master = false;
-
-					for ( var i = 0, il = sharedBoxes.length; i < il; i ++ ) {
-
-						physics.remove( sharedBoxes[ i ] );
-
-					}
-
-					physics.remove( sharedSphere );
+					physics.remove( sharedBoxes[ i ] );
 
 				}
 
-			}
-
-			function notifyMaster() {
-
-				remoteSync.broadcastUserData( {
-					type: 'master',
-					id: clientId
-				} );
-
-			}
-
-			function onReceiveUserData( data ) {
-
-				if ( data.type === 'master' ) {
-
-					masterId = data.id;
-
-					console.log( masterId );
-
-				}
+				physics.remove( sharedSphere );
 
 			}
 		</script>
